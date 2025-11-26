@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { UserData, Message, AppState } from '../types';
+import { generateUUID } from '../services/storage';
 import {  
     Wifi, Calendar, Download, Send, MessageSquare, 
     Shield, Activity, LogOut, Copy, Check 
@@ -29,7 +30,7 @@ export const UserPanel: React.FC<UserPanelProps> = ({ user, fullState, onUpdateU
   const handleSendMessage = () => {
     if (!msgText.trim()) return;
     const newMessage: Message = {
-      id: crypto.randomUUID(),
+      id: generateUUID(),
       sender: 'user',
       text: msgText,
       timestamp: Date.now(),

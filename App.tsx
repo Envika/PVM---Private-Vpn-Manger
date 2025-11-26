@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { loadState, saveState } from './services/storage';
+import { loadState, saveState, generateUUID } from './services/storage';
 import { AppState, UserData, SignUpRequest } from './types';
 import { AdminPanel } from './components/AdminPanel';
 import { UserPanel } from './components/UserPanel';
@@ -44,7 +44,7 @@ const App: React.FC = () => {
 
   const handleSignUp = (username: string) => {
     const newRequest: SignUpRequest = {
-        id: crypto.randomUUID(),
+        id: generateUUID(),
         username: username.startsWith('@') ? username : `@${username}`,
         timestamp: Date.now(),
         status: 'pending'

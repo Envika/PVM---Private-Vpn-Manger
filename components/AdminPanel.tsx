@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { AppState, UserData, Message, SignUpRequest } from '../types';
-import { generateSecureCode, simulateDailyUpdate, saveState } from '../services/storage';
+import { generateSecureCode, simulateDailyUpdate, saveState, generateUUID } from '../services/storage';
 import { 
     Users, DollarSign, Activity, MessageSquare, Plus, RefreshCw, 
     Trash2, Send, AlertCircle, CheckCircle, XCircle, Search 
@@ -36,7 +36,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ state, onUpdate, onLogou
   const handleCreateUser = () => {
     if (!newUserUsername) return;
     const newUser: UserData = {
-      id: crypto.randomUUID(),
+      id: generateUUID(),
       username: newUserUsername.startsWith('@') ? newUserUsername : `@${newUserUsername}`,
       code: generateSecureCode(),
       status: 'pending_payment',
@@ -57,7 +57,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ state, onUpdate, onLogou
 
   const handleApproveRequest = (req: SignUpRequest) => {
     const newUser: UserData = {
-        id: crypto.randomUUID(),
+        id: generateUUID(),
         username: req.username,
         code: generateSecureCode(),
         status: 'pending_payment',
@@ -81,7 +81,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ state, onUpdate, onLogou
       if (u.id === userId) {
         return {
           ...u,
-          messages: [...u.messages, { id: crypto.randomUUID(), sender: 'admin', text: replyText, timestamp: Date.now(), read: false } as Message]
+          messages: [...u.messages, { id: generateUUID(), sender: 'admin', text: replyText, timestamp: Date.now(), read: false } as Message]
         };
       }
       return u;

@@ -1,6 +1,17 @@
 import { GoogleGenAI } from "@google/genai";
 
-const apiKey = process.env.API_KEY || '';
+const getApiKey = () => {
+  try {
+    if (typeof process !== 'undefined' && process.env) {
+      return process.env.API_KEY;
+    }
+  } catch (e) {
+    // ignore
+  }
+  return undefined;
+};
+
+const apiKey = getApiKey();
 const ai = apiKey ? new GoogleGenAI({ apiKey }) : null;
 
 export const generateWelcomeMessage = async (username: string): Promise<string> => {
