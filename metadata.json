@@ -1,0 +1,5 @@
+{
+  "name": "V2Ray Bot Manager",
+  "description": "A comprehensive React-based simulation of a VPN Telegram bot management system. Features an Admin Dashboard for user management and subscription tracking, and a User Client for viewing usage stats and support.",
+  "requestFramePermissions": []
+}
