@@ -1,9 +1,10 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { UserData, Message, AppState } from '../types';
 import { generateUUID } from '../services/storage';
 import {  
     Wifi, Calendar, Download, Send, MessageSquare, 
-    Shield, Activity, LogOut, Copy, Check 
+    Shield, Activity, LogOut, Copy, Check, Info, Server
 } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 
@@ -89,7 +90,35 @@ export const UserPanel: React.FC<UserPanelProps> = ({ user, fullState, onUpdateU
             <main className="flex-1 overflow-y-auto p-6 space-y-8 scrollbar-hide pb-24">
                 
                 {activeTab === 'home' && (
-                    <>
+                    <>  
+                        {/* V2Ray Stats Node Simulation */}
+                        <div className="bg-cyber-800 rounded-xl border border-cyber-700 p-4 shadow-lg relative overflow-hidden">
+                            <div className="flex items-center justify-between mb-2">
+                                <div className="flex items-center gap-2">
+                                    <Server size={18} className="text-cyber-accent" />
+                                    <span className="font-bold text-white text-sm">{fullState.serverMessage || "V2Ray Stats Node"}</span>
+                                </div>
+                                <div className="flex items-center gap-1">
+                                    <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+                                    <span className="text-[10px] text-gray-400">12ms</span>
+                                </div>
+                            </div>
+                            <div className="bg-cyber-900/50 rounded-lg p-3 border border-cyber-700/50 font-mono text-xs text-gray-300 space-y-1">
+                                <div className="flex justify-between">
+                                    <span>Traffic Rem:</span>
+                                    <span className="text-cyber-400">{(user.plan.totalDataGB - user.plan.dataUsedGB).toFixed(2)} GB</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span>Expire Date:</span>
+                                    <span className="text-cyber-400">{user.plan.daysRemaining} Days</span>
+                                </div>
+                                <div className="flex justify-between border-t border-cyber-700 pt-1 mt-1">
+                                    <span>Last Sync:</span>
+                                    <span className="text-gray-500">{new Date(fullState.lastSyncTime).toLocaleTimeString()}</span>
+                                </div>
+                            </div>
+                        </div>
+
                         {/* Status Cards */}
                         <div className="grid grid-cols-2 gap-4">
                             {/* Data Usage */}

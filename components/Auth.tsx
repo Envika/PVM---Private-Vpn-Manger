@@ -1,9 +1,10 @@
+
 import React, { useState } from 'react';
 import { Lock, User, Terminal, ChevronRight } from 'lucide-react';
 import { generateWelcomeMessage } from '../services/gemini';
 
 interface AuthProps {
-  onAdminLogin: () => void;
+  onAdminLogin: (password: string) => boolean;
   onUserLogin: (code: string) => void;
   onSignUp: (username: string) => void;
 }
@@ -22,10 +23,9 @@ export const Auth: React.FC<AuthProps> = ({ onAdminLogin, onUserLogin, onSignUp 
   };
 
   const handleAdminLogin = () => {
-    if (adminPass === 'admin') { // Hardcoded for demo
-      onAdminLogin();
-    } else {
-        alert("Wrong Password (hint: admin)");
+    const success = onAdminLogin(adminPass);
+    if (!success) {
+        alert("Access Denied: Invalid Credentials");
     }
   };
 
@@ -84,7 +84,7 @@ export const Auth: React.FC<AuthProps> = ({ onAdminLogin, onUserLogin, onSignUp 
             </button>
 
             <div className="pt-4 border-t border-cyber-700 flex justify-between text-xs text-gray-400">
-                <button onClick={() => setMode('signup')} className="hover:text-white transition-colors">Request Access</button>
+                <button onClick={() => setMode('signup')} className="hover:text-white transition-colors">Inquire for Access</button>
                 <button onClick={() => setMode('admin')} className="hover:text-white transition-colors">Admin Portal</button>
             </div>
           </div>
@@ -94,6 +94,10 @@ export const Auth: React.FC<AuthProps> = ({ onAdminLogin, onUserLogin, onSignUp 
            <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-300">
                {!signupMsg ? (
                    <>
+                        <div className="text-center mb-4">
+                            <h3 className="text-white font-bold">Request Access</h3>
+                            <p className="text-xs text-gray-500 mt-1">Submit your details to the administration.</p>
+                        </div>
                         <div>
                             <label className="text-xs text-cyber-400 uppercase font-bold ml-1">Telegram Username</label>
                             <div className="relative mt-1">
@@ -112,21 +116,21 @@ export const Auth: React.FC<AuthProps> = ({ onAdminLogin, onUserLogin, onSignUp 
                             disabled={isLoading}
                             className="w-full bg-cyber-accent hover:bg-green-400 text-white font-bold py-3 rounded-lg transition-all shadow-lg shadow-green-500/20 active:scale-95 flex justify-center"
                         >
-                            {isLoading ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : 'JOIN WAITLIST'}
+                            {isLoading ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : 'SUBMIT REQUEST'}
                         </button>
                    </>
                ) : (
                    <div className="text-center py-4 space-y-4">
-                       <div className="text-cyber-accent text-lg font-bold">Request Sent</div>
+                       <div className="text-cyber-accent text-lg font-bold">Inquiry Sent</div>
                        <p className="text-gray-300 text-sm leading-relaxed border-l-2 border-cyber-500 pl-4 text-left italic">
                            "{signupMsg}"
                        </p>
-                       <p className="text-xs text-gray-500 mt-4">You will receive your access code from an admin shortly.</p>
+                       <p className="text-xs text-gray-500 mt-4">An administrator will review your request shortly.</p>
                    </div>
                )}
                
                <button onClick={() => { setMode('login'); setSignupMsg(''); setUsername(''); }} className="w-full text-xs text-gray-500 hover:text-white mt-4">
-                   Back to Login
+                   Return to Login
                </button>
            </div>
         )}
@@ -134,14 +138,15 @@ export const Auth: React.FC<AuthProps> = ({ onAdminLogin, onUserLogin, onSignUp 
         {mode === 'admin' && (
              <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-300">
                 <div className="bg-red-500/10 border border-red-500/30 rounded p-2 text-center text-xs text-red-400 mb-4">
-                    RESTRICTED AREA
+                    ADMINISTRATIVE ACCESS
                 </div>
                 <div>
-                    <label className="text-xs text-cyber-400 uppercase font-bold ml-1">Admin Password</label>
+                    <label className="text-xs text-cyber-400 uppercase font-bold ml-1">Password</label>
                     <input 
                         type="password" 
                         value={adminPass}
                         onChange={(e) => setAdminPass(e.target.value)}
+                        placeholder="Enter admin password"
                         className="w-full bg-cyber-900 border border-cyber-700 rounded-lg px-4 py-3 text-white outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500 transition-all mt-1"
                     />
                 </div>

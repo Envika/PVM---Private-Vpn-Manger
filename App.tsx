@@ -1,5 +1,6 @@
+
 import React, { useState, useEffect } from 'react';
-import { loadState, saveState, generateUUID } from './services/storage';
+import { loadState, saveState, generateUUID, simulateLiveSync } from './services/storage';
 import { AppState, UserData, SignUpRequest } from './types';
 import { AdminPanel } from './components/AdminPanel';
 import { UserPanel } from './components/UserPanel';
@@ -16,6 +17,29 @@ const App: React.FC = () => {
     setState(loadState());
   }, []);
 
+  // Auto-Sync Logic (Every 10 minutes)
+  useEffect(() => {
+    const SYNC_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
+    const interval = setInterval(() => {
+        // We read from function scope 'state' which might be stale in a closure if not careful,
+        // but since we are updating state via setState callback, it's better to load fresh or use callback.
+        // For simplicity with this hook structure:
+        setState(prevState => {
+            const syncedState = simulateLiveSync(prevState);
+            saveState(syncedState);
+            
+            // Also update current user if logged in
+            if (currentUser) {
+                const updated = syncedState.users.find(u => u.id === currentUser.id);
+                if (updated) setCurrentUser(updated);
+            }
+            return syncedState;
+        });
+    }, SYNC_INTERVAL_MS);
+
+    return () => clearInterval(interval);
+  }, [currentUser?.id]); // Restart interval if user changes (rare), mainly just run on mount
+
   // Sync state changes to storage
   const handleStateUpdate = (newState: AppState) => {
     setState(newState);
@@ -27,9 +51,13 @@ const App: React.FC = () => {
     }
   };
 
-  const handleAdminLogin = () => {
-    setIsAdmin(true);
-    setView('admin');
+  const handleAdminLogin = (password: string): boolean => {
+    if (password === state.adminPassword) {
+        setIsAdmin(true);
+        setView('admin');
+        return true;
+    }
+    return false;
   };
 
   const handleUserLogin = (code: string) => {

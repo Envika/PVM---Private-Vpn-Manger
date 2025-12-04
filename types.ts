@@ -1,4 +1,5 @@
-export type UserStatus = 'active' | 'expired' | 'pending_payment' | 'banned';
+
+export type UserStatus = 'active' | 'expired' | 'pending_payment';
 
 export interface Message {
   id: string;
@@ -34,6 +35,10 @@ export interface AppState {
   users: UserData[];
   requests: SignUpRequest[];
   baseVpnConfig: string;
+  serverMessage: string;
+  adminPassword: string; // New: changeable password
+  subscriptionUrl: string; // New: Upstream URL
+  lastSyncTime: number; // New: Track updates
 }
 
 // Global context to simulate database
@@ -74,5 +79,9 @@ export const INITIAL_STATE: AppState = {
   requests: [
     { id: 'req-1', username: '@new_guy', timestamp: Date.now(), status: 'pending' }
   ],
-  baseVpnConfig: 'vless://uuid@cdn.example.com:443?encryption=none&security=tls&sni=cdn.example.com&fp=chrome&type=ws&host=cdn.example.com&path=%2F#VPN-Server'
+  baseVpnConfig: 'vless://uuid@cdn.example.com:443?encryption=none&security=tls&sni=cdn.example.com&fp=chrome&type=ws&host=cdn.example.com&path=%2F#VPN-Server',
+  serverMessage: '✅ All Systems Operational | ⚡ Server 2 Added',
+  adminPassword: 'admin', // Default password
+  subscriptionUrl: '',
+  lastSyncTime: Date.now()
 };

@@ -1,12 +1,22 @@
+
 import { AppState, INITIAL_STATE, UserData, SignUpRequest, UserStatus } from '../types';
 
-const STORAGE_KEY = 'v2ray_bot_db_v1';
+const STORAGE_KEY = 'v2ray_bot_db_v3'; // Bumped version for password support
 
 export const loadState = (): AppState => {
   const stored = localStorage.getItem(STORAGE_KEY);
   if (!stored) return INITIAL_STATE;
   try {
-    return JSON.parse(stored);
+    const parsed = JSON.parse(stored);
+    // Ensure new fields exist if loading from old state
+    return {
+        ...INITIAL_STATE,
+        ...parsed,
+        adminPassword: parsed.adminPassword || INITIAL_STATE.adminPassword,
+        serverMessage: parsed.serverMessage || INITIAL_STATE.serverMessage,
+        subscriptionUrl: parsed.subscriptionUrl || INITIAL_STATE.subscriptionUrl,
+        lastSyncTime: parsed.lastSyncTime || Date.now()
+    };
   } catch (e) {
     console.error("Failed to parse state", e);
     return INITIAL_STATE;
@@ -37,16 +47,15 @@ export const generateUUID = (): string => {
   });
 };
 
+// Daily large update (cron job simulation)
 export const simulateDailyUpdate = (state: AppState): AppState => {
   const newUsers = state.users.map(u => {
     if (u.status !== 'active') return u;
     
     const newDays = Math.max(0, u.plan.daysRemaining - 1);
-    const usedData = u.plan.dataUsedGB + (Math.random() * 2); // Random usage 0-2GB per day
-    const newData = Math.min(u.plan.totalDataGB, usedData);
     
     let newStatus: UserStatus = u.status;
-    if (newDays === 0 || newData >= u.plan.totalDataGB) {
+    if (newDays === 0) {
         newStatus = 'expired';
     }
 
@@ -55,11 +64,42 @@ export const simulateDailyUpdate = (state: AppState): AppState => {
       status: newStatus,
       plan: {
         ...u.plan,
-        daysRemaining: newDays,
-        dataUsedGB: parseFloat(newData.toFixed(2))
+        daysRemaining: newDays
       }
     };
   });
 
   return { ...state, users: newUsers };
+};
+
+// "Live" sync that happens every ~10 mins to simulate fetching data from upstream
+export const simulateLiveSync = (state: AppState): AppState => {
+    const newUsers = state.users.map(u => {
+        if (u.status !== 'active') return u;
+
+        // Simulate small data usage increment (0.01 GB to 0.1 GB)
+        const usageIncrement = Math.random() * 0.1;
+        const usedData = u.plan.dataUsedGB + usageIncrement;
+        const newData = Math.min(u.plan.totalDataGB, usedData);
+        
+        let newStatus: UserStatus = u.status;
+        if (newData >= u.plan.totalDataGB) {
+            newStatus = 'expired';
+        }
+
+        return {
+            ...u,
+            status: newStatus,
+            plan: {
+                ...u.plan,
+                dataUsedGB: parseFloat(newData.toFixed(2))
+            }
+        };
+    });
+
+    return { 
+        ...state, 
+        users: newUsers,
+        lastSyncTime: Date.now()
+    };
 };

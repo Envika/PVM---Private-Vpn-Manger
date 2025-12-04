@@ -1,9 +1,10 @@
+
 import React, { useState, useEffect } from 'react';
 import { AppState, UserData, Message, SignUpRequest } from '../types';
-import { generateSecureCode, simulateDailyUpdate, saveState, generateUUID } from '../services/storage';
+import { generateSecureCode, simulateLiveSync, saveState, generateUUID } from '../services/storage';
 import { 
     Users, DollarSign, Activity, MessageSquare, Plus, RefreshCw, 
-    Trash2, Send, AlertCircle, CheckCircle, XCircle, Search 
+    Trash2, Send, AlertCircle, CheckCircle, XCircle, Search, Settings, Server, Lock, Globe
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { suggestReply } from '../services/gemini';
@@ -15,12 +16,25 @@ interface AdminPanelProps {
 }
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({ state, onUpdate, onLogout }) => {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'users' | 'requests' | 'messages'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'users' | 'requests' | 'messages' | 'settings'>('dashboard');
   const [selectedUser, setSelectedUser] = useState<UserData | null>(null);
   const [newUserUsername, setNewUserUsername] = useState('');
   const [replyText, setReplyText] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  
+  // Settings local state
+  const [vpnConfig, setVpnConfig] = useState(state.baseVpnConfig);
+  const [serverMsg, setServerMsg] = useState(state.serverMessage);
+  const [subUrl, setSubUrl] = useState(state.subscriptionUrl);
+  const [newPassword, setNewPassword] = useState('');
+
+  // Sync settings local state with global state when tab changes
+  useEffect(() => {
+    setVpnConfig(state.baseVpnConfig);
+    setServerMsg(state.serverMessage);
+    setSubUrl(state.subscriptionUrl);
+  }, [state.baseVpnConfig, state.serverMessage, state.subscriptionUrl]);
 
   // Stats
   const totalUsers = state.users.length;
@@ -49,10 +63,30 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ state, onUpdate, onLogou
     setActiveTab('users');
   };
 
-  const handleSimulateUpdate = () => {
-    const newState = simulateDailyUpdate(state);
+  const handleManualSync = () => {
+    const newState = simulateLiveSync(state);
     onUpdate(newState);
     saveState(newState); // Force save
+    alert("Manual sync complete. User data updated.");
+  };
+
+  const handleSaveSettings = () => {
+      let updatedState = {
+          ...state,
+          baseVpnConfig: vpnConfig,
+          serverMessage: serverMsg,
+          subscriptionUrl: subUrl
+      };
+
+      if (newPassword) {
+          updatedState.adminPassword = newPassword;
+          alert("Settings & Password Saved");
+          setNewPassword('');
+      } else {
+          alert("Settings Saved");
+      }
+      
+      onUpdate(updatedState);
   };
 
   const handleApproveRequest = (req: SignUpRequest) => {
@@ -125,7 +159,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ state, onUpdate, onLogou
             { id: 'dashboard', icon: Activity, label: 'Overview' },
             { id: 'users', icon: Users, label: 'Users' },
             { id: 'requests', icon: Plus, label: 'Requests', count: state.requests.length },
-            { id: 'messages', icon: MessageSquare, label: 'Messages' }
+            { id: 'messages', icon: MessageSquare, label: 'Messages' },
+            { id: 'settings', icon: Settings, label: 'Settings' }
           ].map((item) => (
             <button
               key={item.id}
@@ -146,11 +181,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ state, onUpdate, onLogou
         </nav>
         <div className="p-4 border-t border-cyber-700">
              <button 
-                onClick={handleSimulateUpdate}
+                onClick={handleManualSync}
                 className="w-full flex items-center justify-center space-x-2 bg-cyber-700 hover:bg-cyber-600 text-xs py-2 rounded mb-2 text-gray-300"
             >
                 <RefreshCw size={14} />
-                <span>Simulate Daily Cron</span>
+                <span>Force Sync Now</span>
             </button>
             <button onClick={onLogout} className="w-full text-sm text-red-400 hover:text-red-300 py-2">Logout</button>
         </div>
@@ -162,8 +197,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ state, onUpdate, onLogou
         <header className="h-16 bg-cyber-800/50 border-b border-cyber-700 flex items-center justify-between px-6 backdrop-blur">
           <h2 className="text-lg font-semibold capitalize text-white">{activeTab}</h2>
           <div className="flex items-center space-x-4">
-             <div className="text-xs text-gray-500">System Status: ONLINE</div>
-             <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+             <div className="flex flex-col items-end">
+                <div className="flex items-center space-x-2">
+                    <span className="text-xs text-gray-500">SYSTEM ONLINE</span>
+                    <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+                </div>
+                <span className="text-[10px] text-gray-600">Last Sync: {new Date(state.lastSyncTime).toLocaleTimeString()}</span>
+             </div>
           </div>
         </header>
 
@@ -199,23 +239,26 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ state, onUpdate, onLogou
                   <AlertCircle className="text-cyber-danger opacity-80" />
                 </div>
               </div>
-              <div className="col-span-1 md:col-span-2 lg:col-span-4 bg-cyber-800 p-6 rounded-xl border border-cyber-700 shadow-lg h-80">
+              <div className="col-span-1 md:col-span-2 lg:col-span-4 bg-cyber-800 p-6 rounded-xl border border-cyber-700 shadow-lg" style={{ height: '320px', minHeight: '320px' }}>
                 <h3 className="text-lg font-bold mb-4">User Distribution</h3>
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={chartData} layout="vertical" margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-                    <XAxis type="number" hide />
-                    <YAxis dataKey="name" type="category" stroke="#94a3b8" width={80} />
-                    <Tooltip 
-                        contentStyle={{ backgroundColor: '#1e293b', borderColor: '#334155' }} 
-                        itemStyle={{ color: '#e2e8f0' }}
-                    />
-                    <Bar dataKey="value" radius={[0, 4, 4, 0]} barSize={40}>
-                        {chartData.map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={entry.color} />
-                        ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
+                <div style={{ width: '100%', height: '250px' }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={chartData} layout="vertical" margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                      <XAxis type="number" hide />
+                      <YAxis dataKey="name" type="category" stroke="#94a3b8" width={80} />
+                      <Tooltip 
+                          contentStyle={{ backgroundColor: '#1e293b', borderColor: '#334155' }} 
+                          itemStyle={{ color: '#e2e8f0' }}
+                          cursor={{fill: 'transparent'}}
+                      />
+                      <Bar dataKey="value" radius={[0, 4, 4, 0]} barSize={40}>
+                          {chartData.map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={entry.color} />
+                          ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
               </div>
             </div>
           )}
@@ -334,7 +377,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ state, onUpdate, onLogou
                                     <option value="active">Active</option>
                                     <option value="pending_payment">Pending Payment</option>
                                     <option value="expired">Expired</option>
-                                    <option value="banned">Banned</option>
                                 </select>
                             </div>
                             <div className="bg-cyber-900 p-4 rounded-lg">
@@ -402,7 +444,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ state, onUpdate, onLogou
           {activeTab === 'requests' && (
               <div className="grid grid-cols-1 gap-4">
                   {state.requests.length === 0 && (
-                      <div className="text-center text-gray-500 py-10">No pending sign-up requests.</div>
+                      <div className="text-center text-gray-500 py-10">No pending access inquiries.</div>
                   )}
                   {state.requests.map(req => (
                       <div key={req.id} className="bg-cyber-800 p-4 rounded-xl border border-cyber-700 flex justify-between items-center">
@@ -456,6 +498,100 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ state, onUpdate, onLogou
                    {state.users.filter(u => u.messages.some(m => m.sender === 'user' && !m.read)).length === 0 && (
                        <div className="text-center text-gray-500">All messages read.</div>
                    )}
+               </div>
+           )}
+
+           {/* Settings View (VPN Info) */}
+           {activeTab === 'settings' && (
+               <div className="max-w-4xl mx-auto space-y-6 animate-in fade-in zoom-in-95">
+                   {/* Security Config */}
+                   <div className="bg-cyber-800 p-6 rounded-xl border border-cyber-700">
+                        <div className="flex items-center gap-3 mb-4">
+                            <Lock className="text-cyber-danger" size={24} />
+                            <h3 className="text-xl font-bold text-white">Admin Security</h3>
+                        </div>
+                        <div className="space-y-4">
+                             <div>
+                                <label className="block text-sm font-medium text-cyber-400 mb-2 uppercase tracking-wide">
+                                    Change Admin Password
+                                </label>
+                                <input 
+                                    type="password"
+                                    value={newPassword}
+                                    onChange={(e) => setNewPassword(e.target.value)}
+                                    placeholder="Enter new password to update"
+                                    className="w-full bg-cyber-900 border border-cyber-700 rounded-lg p-3 text-white focus:ring-1 focus:ring-cyber-500 outline-none"
+                                />
+                                <p className="text-xs text-gray-500 mt-1">Leave blank to keep current password.</p>
+                            </div>
+                        </div>
+                   </div>
+
+                   {/* Upstream/V2ray Config */}
+                   <div className="bg-cyber-800 p-6 rounded-xl border border-cyber-700">
+                        <div className="flex items-center gap-3 mb-4">
+                            <Server className="text-cyber-400" size={24} />
+                            <h3 className="text-xl font-bold text-white">V2Ray / Upstream Configuration</h3>
+                        </div>
+
+                        <div className="space-y-6">
+                            <div>
+                                <label className="block text-sm font-medium text-cyber-400 mb-2 uppercase tracking-wide">
+                                    Upstream Subscription URL (For Auto-Sync)
+                                </label>
+                                <div className="flex gap-2">
+                                    <input 
+                                        type="text"
+                                        value={subUrl}
+                                        onChange={(e) => setSubUrl(e.target.value)}
+                                        placeholder="https://provider.com/api/v1/client/subscribe..."
+                                        className="flex-1 bg-cyber-900 border border-cyber-700 rounded-lg p-3 text-white focus:ring-1 focus:ring-cyber-500 outline-none"
+                                    />
+                                    <div className="bg-cyber-900 border border-cyber-700 px-4 py-2 rounded-lg flex items-center gap-2 text-xs text-green-400 whitespace-nowrap">
+                                        <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                                        Sync: 10m
+                                    </div>
+                                </div>
+                                <p className="text-xs text-gray-500 mt-1">Bot will simulate fetching from this URL every 10 minutes to update user stats.</p>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-cyber-400 mb-2 uppercase tracking-wide">
+                                    Server Status / Public Message (Stats Node Name)
+                                </label>
+                                <textarea 
+                                    value={serverMsg}
+                                    onChange={(e) => setServerMsg(e.target.value)}
+                                    placeholder="e.g., ⚡ VIP Server - Premium Bandwidth"
+                                    className="w-full bg-cyber-900 border border-cyber-700 rounded-lg p-3 text-white h-24 focus:ring-1 focus:ring-cyber-500 outline-none"
+                                />
+                                <p className="text-xs text-gray-500 mt-1">This appears as the "Stats Node" name in the user panel.</p>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-cyber-400 mb-2 uppercase tracking-wide">
+                                    Base V2Ray Configuration String
+                                </label>
+                                <textarea 
+                                    value={vpnConfig}
+                                    onChange={(e) => setVpnConfig(e.target.value)}
+                                    placeholder="vless://..."
+                                    className="w-full bg-cyber-900 border border-cyber-700 rounded-lg p-3 text-white h-32 font-mono text-xs focus:ring-1 focus:ring-cyber-500 outline-none"
+                                />
+                                <p className="text-xs text-gray-500 mt-1">
+                                    Paste the subscription link or config from your provider here. 
+                                </p>
+                            </div>
+
+                            <button 
+                                onClick={handleSaveSettings}
+                                className="bg-cyber-500 hover:bg-cyber-400 text-white px-6 py-2 rounded-lg font-bold flex items-center gap-2 shadow-lg shadow-cyber-500/20"
+                            >
+                                <CheckCircle size={18} />
+                                Save Configuration
+                            </button>
+                        </div>
+                   </div>
                </div>
            )}
 
