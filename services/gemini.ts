@@ -42,3 +42,20 @@ export const suggestReply = async (userMessage: string): Promise<string> => {
     return "Message received.";
   }
 };
+
+export const generateBroadcastMessage = async (topic: string, tone: 'urgent' | 'casual' | 'formal' = 'formal'): Promise<string> => {
+  if (!ai) return `📢 Announcement: ${topic}`;
+
+  try {
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: `Write a short, engaging Telegram-style announcement message (under 300 characters) for VPN bot users.
+      Topic: ${topic}
+      Tone: ${tone}
+      Context: This is for the "GhostLayer" network. Use suitable emojis. Do not use markdown bolding (like **text**), use plain text or caps for emphasis.`,
+    });
+    return response.text || `📢 Announcement: ${topic}`;
+  } catch (error) {
+    return `📢 Announcement: ${topic}`;
+  }
+};

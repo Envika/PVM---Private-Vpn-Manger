@@ -1,5 +1,5 @@
 
-import { AppState, INITIAL_STATE, UserData, ServerNode, UserStatus } from '../types';
+import { AppState, INITIAL_STATE, ServerNode } from '../types';
 
 const STORAGE_KEY = 'v2ray_bot_db_v5_multiserver'; // Bumped version
 
@@ -51,7 +51,6 @@ export const loadState = (): AppState => {
 
         return {
           users: migratedUsers,
-          requests: parsedOld.requests || [],
           servers: [defaultServer],
           adminPassword: parsedOld.adminPassword || 'admin',
           lastSyncTime: Date.now()
@@ -65,7 +64,9 @@ export const loadState = (): AppState => {
 
   try {
     const parsed = JSON.parse(stored);
-    return { ...INITIAL_STATE, ...parsed };
+    // Ensure requests property is ignored if present in old JSON
+    const { requests, ...cleanState } = parsed; 
+    return { ...INITIAL_STATE, ...cleanState };
   } catch (e) {
     console.error("Failed to parse state", e);
     return INITIAL_STATE;

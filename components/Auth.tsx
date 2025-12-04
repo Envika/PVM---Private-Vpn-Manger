@@ -1,21 +1,15 @@
-
 import React, { useState } from 'react';
-import { Lock, User, Terminal, ChevronRight } from 'lucide-react';
-import { generateWelcomeMessage } from '../services/gemini';
+import { Lock, Terminal } from 'lucide-react';
 
 interface AuthProps {
   onAdminLogin: (password: string) => boolean;
   onUserLogin: (code: string) => void;
-  onSignUp: (username: string) => void;
 }
 
-export const Auth: React.FC<AuthProps> = ({ onAdminLogin, onUserLogin, onSignUp }) => {
-  const [mode, setMode] = useState<'login' | 'signup' | 'admin'>('login');
+export const Auth: React.FC<AuthProps> = ({ onAdminLogin, onUserLogin }) => {
+  const [mode, setMode] = useState<'login' | 'admin'>('login');
   const [inputCode, setInputCode] = useState('');
-  const [username, setUsername] = useState('');
   const [adminPass, setAdminPass] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [signupMsg, setSignupMsg] = useState('');
 
   const handleUserLogin = () => {
     if (inputCode.length < 24) return;
@@ -27,16 +21,6 @@ export const Auth: React.FC<AuthProps> = ({ onAdminLogin, onUserLogin, onSignUp 
     if (!success) {
         alert("Access Denied: Invalid Credentials");
     }
-  };
-
-  const handleSignUp = async () => {
-    if (!username) return;
-    setIsLoading(true);
-    // Simulate AI delay
-    const msg = await generateWelcomeMessage(username);
-    setSignupMsg(msg);
-    onSignUp(username);
-    setIsLoading(false);
   };
 
   return (
@@ -83,56 +67,10 @@ export const Auth: React.FC<AuthProps> = ({ onAdminLogin, onUserLogin, onSignUp 
                 CONNECT
             </button>
 
-            <div className="pt-4 border-t border-cyber-700 flex justify-between text-xs text-gray-400">
-                <button onClick={() => setMode('signup')} className="hover:text-white transition-colors">Inquire for Access</button>
+            <div className="pt-4 border-t border-cyber-700 flex justify-center text-xs text-gray-400">
                 <button onClick={() => setMode('admin')} className="hover:text-white transition-colors">Admin Portal</button>
             </div>
           </div>
-        )}
-
-        {mode === 'signup' && (
-           <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-300">
-               {!signupMsg ? (
-                   <>
-                        <div className="text-center mb-4">
-                            <h3 className="text-white font-bold">Request Access</h3>
-                            <p className="text-xs text-gray-500 mt-1">Submit your details to the administration.</p>
-                        </div>
-                        <div>
-                            <label className="text-xs text-cyber-400 uppercase font-bold ml-1">Telegram Username</label>
-                            <div className="relative mt-1">
-                                <input 
-                                    type="text" 
-                                    value={username}
-                                    onChange={(e) => setUsername(e.target.value)}
-                                    placeholder="@username"
-                                    className="w-full bg-cyber-900 border border-cyber-700 rounded-lg px-4 py-3 text-white outline-none focus:border-cyber-500 focus:ring-1 focus:ring-cyber-500 transition-all"
-                                />
-                                <User className="absolute right-3 top-3.5 text-gray-600" size={18} />
-                            </div>
-                        </div>
-                        <button 
-                            onClick={handleSignUp}
-                            disabled={isLoading}
-                            className="w-full bg-cyber-accent hover:bg-green-400 text-white font-bold py-3 rounded-lg transition-all shadow-lg shadow-green-500/20 active:scale-95 flex justify-center"
-                        >
-                            {isLoading ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : 'SUBMIT REQUEST'}
-                        </button>
-                   </>
-               ) : (
-                   <div className="text-center py-4 space-y-4">
-                       <div className="text-cyber-accent text-lg font-bold">Inquiry Sent</div>
-                       <p className="text-gray-300 text-sm leading-relaxed border-l-2 border-cyber-500 pl-4 text-left italic">
-                           "{signupMsg}"
-                       </p>
-                       <p className="text-xs text-gray-500 mt-4">An administrator will review your request shortly.</p>
-                   </div>
-               )}
-               
-               <button onClick={() => { setMode('login'); setSignupMsg(''); setUsername(''); }} className="w-full text-xs text-gray-500 hover:text-white mt-4">
-                   Return to Login
-               </button>
-           </div>
         )}
 
         {mode === 'admin' && (

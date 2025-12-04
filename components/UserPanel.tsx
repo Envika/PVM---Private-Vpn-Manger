@@ -28,7 +28,21 @@ export const UserPanel: React.FC<UserPanelProps> = ({ user, fullState, onUpdateU
       if (activeTab === 'support' && messagesEndRef.current) {
           messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
       }
-  }, [user.messages, activeTab]);
+
+      // Mark messages as read when in support tab
+      if (activeTab === 'support') {
+          const hasUnread = user.messages.some(m => m.sender === 'admin' && !m.read);
+          if (hasUnread) {
+               const updatedMessages = user.messages.map(m => 
+                  m.sender === 'admin' ? { ...m, read: true } : m
+              );
+              // Wrap in timeout or use direct update to avoid render loop issues if parent is strict
+              onUpdateUser({ ...user, messages: updatedMessages });
+          }
+      }
+  }, [activeTab, user.messages.length, user.messages]); 
+  // We include user.messages in deps but the check `hasUnread` prevents infinite loops 
+  // because the next render will have all read=true.
 
   const handleSendMessage = () => {
     if (!msgText.trim()) return;
@@ -65,7 +79,6 @@ export const UserPanel: React.FC<UserPanelProps> = ({ user, fullState, onUpdateU
   };
 
   const dataPercentage = stats.totalData > 0 ? Math.min(100, (stats.usedData / stats.totalData) * 100) : 0;
-  const daysPercentage = stats.totalDays > 0 ? Math.min(100, (stats.daysRemaining / stats.totalDays) * 100) : 0;
   
   const dataChart = [
       { name: 'Used', value: stats.usedData, color: '#3b82f6' },

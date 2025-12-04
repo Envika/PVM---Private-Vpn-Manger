@@ -39,17 +39,9 @@ export interface UserData {
   joinedAt: number;
 }
 
-export interface SignUpRequest {
-  id: string;
-  username: string;
-  timestamp: number;
-  status: 'pending' | 'approved' | 'rejected';
-}
-
 export interface AppState {
   users: UserData[];
-  requests: SignUpRequest[];
-  servers: ServerNode[]; // New: Multiple servers
+  servers: ServerNode[];
   adminPassword: string;
   lastSyncTime: number;
 }
@@ -57,7 +49,6 @@ export interface AppState {
 // Global context to simulate database
 export const INITIAL_STATE: AppState = {
   users: [],
-  requests: [],
   servers: [
     {
       id: 'srv-default-1',

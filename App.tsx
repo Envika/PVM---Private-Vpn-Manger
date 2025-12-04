@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
-import { loadState, saveState, generateUUID, simulateLiveSync } from './services/storage';
-import { AppState, UserData, SignUpRequest } from './types';
+import { loadState, saveState, simulateLiveSync } from './services/storage';
+import { AppState, UserData } from './types';
 import { AdminPanel } from './components/AdminPanel';
 import { UserPanel } from './components/UserPanel';
 import { Auth } from './components/Auth';
@@ -70,17 +70,6 @@ const App: React.FC = () => {
     }
   };
 
-  const handleSignUp = (username: string) => {
-    const newRequest: SignUpRequest = {
-        id: generateUUID(),
-        username: username.startsWith('@') ? username : `@${username}`,
-        timestamp: Date.now(),
-        status: 'pending'
-    };
-    const newState = { ...state, requests: [...state.requests, newRequest] };
-    handleStateUpdate(newState);
-  };
-
   const handleLogout = () => {
     setIsAdmin(false);
     setCurrentUser(null);
@@ -100,7 +89,6 @@ const App: React.FC = () => {
         <Auth 
             onAdminLogin={handleAdminLogin} 
             onUserLogin={handleUserLogin} 
-            onSignUp={handleSignUp}
         />
       )}
       
