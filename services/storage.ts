@@ -1,22 +1,71 @@
 
-import { AppState, INITIAL_STATE, UserData, SignUpRequest, UserStatus } from '../types';
+import { AppState, INITIAL_STATE, UserData, ServerNode, UserStatus } from '../types';
 
-const STORAGE_KEY = 'v2ray_bot_db_v3'; // Bumped version for password support
+const STORAGE_KEY = 'v2ray_bot_db_v5_multiserver'; // Bumped version
+
+export const generateUUID = (): string => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+};
+
+export const generateSecureCode = (): string => {
+  const array = new Uint8Array(12);
+  crypto.getRandomValues(array);
+  return Array.from(array)
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+};
 
 export const loadState = (): AppState => {
   const stored = localStorage.getItem(STORAGE_KEY);
-  if (!stored) return INITIAL_STATE;
+  if (!stored) {
+    // Try to migrate from v3/v4 if exists to preserve password/users
+    const oldStored = localStorage.getItem('v2ray_bot_db_v3') || localStorage.getItem('v2ray_bot_db_v4');
+    if (oldStored) {
+      try {
+        const parsedOld = JSON.parse(oldStored);
+        // Create a default server from old global config
+        const defaultServer: ServerNode = {
+          id: generateUUID(),
+          name: 'Primary Server (Migrated)',
+          subscriptionUrl: parsedOld.subscriptionUrl || '',
+          configLink: parsedOld.baseVpnConfig || 'vless://example',
+          message: parsedOld.serverMessage || 'System Operational',
+          totalDataGB: 1000,
+          dataUsedGB: 0,
+          totalDays: 30,
+          daysRemaining: 30,
+          status: 'active'
+        };
+
+        // Assign existing users to this server
+        const migratedUsers = (parsedOld.users || []).map((u: any) => ({
+           ...u,
+           serverId: defaultServer.id
+        }));
+
+        return {
+          users: migratedUsers,
+          requests: parsedOld.requests || [],
+          servers: [defaultServer],
+          adminPassword: parsedOld.adminPassword || 'admin',
+          lastSyncTime: Date.now()
+        };
+      } catch (e) {
+        console.error("Migration failed", e);
+      }
+    }
+    return INITIAL_STATE;
+  }
+
   try {
     const parsed = JSON.parse(stored);
-    // Ensure new fields exist if loading from old state
-    return {
-        ...INITIAL_STATE,
-        ...parsed,
-        adminPassword: parsed.adminPassword || INITIAL_STATE.adminPassword,
-        serverMessage: parsed.serverMessage || INITIAL_STATE.serverMessage,
-        subscriptionUrl: parsed.subscriptionUrl || INITIAL_STATE.subscriptionUrl,
-        lastSyncTime: parsed.lastSyncTime || Date.now()
-    };
+    return { ...INITIAL_STATE, ...parsed };
   } catch (e) {
     console.error("Failed to parse state", e);
     return INITIAL_STATE;
@@ -27,79 +76,44 @@ export const saveState = (state: AppState) => {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 };
 
-export const generateSecureCode = (): string => {
-  // Generate 24 random hex characters
-  const array = new Uint8Array(12);
-  crypto.getRandomValues(array);
-  return Array.from(array)
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
-};
-
-export const generateUUID = (): string => {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID();
-  }
-  // Fallback for environments without crypto.randomUUID
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-    var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
-    return v.toString(16);
-  });
-};
-
-// Daily large update (cron job simulation)
+// Daily update logic (Run via manual trigger or smart sync)
 export const simulateDailyUpdate = (state: AppState): AppState => {
-  const newUsers = state.users.map(u => {
-    if (u.status !== 'active') return u;
-    
-    const newDays = Math.max(0, u.plan.daysRemaining - 1);
-    
-    let newStatus: UserStatus = u.status;
-    if (newDays === 0) {
-        newStatus = 'expired';
-    }
-
-    return {
-      ...u,
-      status: newStatus,
-      plan: {
-        ...u.plan,
-        daysRemaining: newDays
-      }
-    };
+  // Update Server Days
+  const newServers = state.servers.map(s => {
+      const newDays = Math.max(0, s.daysRemaining - 1);
+      return { ...s, daysRemaining: newDays };
   });
 
-  return { ...state, users: newUsers };
+  return { ...state, servers: newServers };
 };
 
-// "Live" sync that happens every ~10 mins to simulate fetching data from upstream
+// "Live" sync that simulates fetching data from Upstream
+// This now updates SERVERS (Shared stats) rather than just users
 export const simulateLiveSync = (state: AppState): AppState => {
-    const newUsers = state.users.map(u => {
-        if (u.status !== 'active') return u;
+    // Update Servers
+    const newServers = state.servers.map(s => {
+        if (s.status === 'offline') return s;
 
-        // Simulate small data usage increment (0.01 GB to 0.1 GB)
-        const usageIncrement = Math.random() * 0.1;
-        const usedData = u.plan.dataUsedGB + usageIncrement;
-        const newData = Math.min(u.plan.totalDataGB, usedData);
+        // Simulate usage increment
+        // Random usage between 0.05 GB and 0.5 GB per sync interval
+        const usageIncrement = Math.random() * 0.5; 
+        const usedData = s.dataUsedGB + usageIncrement;
+        const newData = Math.min(s.totalDataGB, usedData);
         
-        let newStatus: UserStatus = u.status;
-        if (newData >= u.plan.totalDataGB) {
-            newStatus = 'expired';
+        let newStatus = s.status;
+        if (newData >= s.totalDataGB || s.daysRemaining <= 0) {
+            // Can add logic to auto-disable, but usually we just show 0
         }
 
         return {
-            ...u,
-            status: newStatus,
-            plan: {
-                ...u.plan,
-                dataUsedGB: parseFloat(newData.toFixed(2))
-            }
+            ...s,
+            dataUsedGB: parseFloat(newData.toFixed(2))
         };
     });
 
     return { 
         ...state, 
-        users: newUsers,
+        servers: newServers,
         lastSyncTime: Date.now()
     };
 };

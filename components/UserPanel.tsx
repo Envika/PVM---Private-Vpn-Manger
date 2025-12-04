@@ -4,7 +4,7 @@ import { UserData, Message, AppState } from '../types';
 import { generateUUID } from '../services/storage';
 import {  
     Wifi, Calendar, Download, Send, MessageSquare, 
-    Shield, Activity, LogOut, Copy, Check, Info, Server
+    Shield, Activity, LogOut, Copy, Check, Info, Server, AlertTriangle
 } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 
@@ -20,6 +20,8 @@ export const UserPanel: React.FC<UserPanelProps> = ({ user, fullState, onUpdateU
   const [msgText, setMsgText] = useState('');
   const [copied, setCopied] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const assignedServer = fullState.servers.find(s => s.id === user.serverId);
 
   useEffect(() => {
       // Auto-scroll to bottom of chat
@@ -42,26 +44,40 @@ export const UserPanel: React.FC<UserPanelProps> = ({ user, fullState, onUpdateU
   };
 
   const handleCopyLink = () => {
-      // Simulate V2Ray Link Generation
-      const link = `${fullState.baseVpnConfig}#${user.username}`;
+      if (!assignedServer) return;
+      const link = `${assignedServer.configLink}#${user.username}`;
       navigator.clipboard.writeText(link);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
   };
 
-  // Calculate percentages for charts
-  const dataPercentage = Math.min(100, (user.plan.dataUsedGB / user.plan.totalDataGB) * 100);
-  const daysPercentage = Math.min(100, (user.plan.daysRemaining / user.plan.totalDays) * 100);
+  // Determine which stats to show (Shared Server Stats if bound, otherwise fallback/empty)
+  const stats = assignedServer ? {
+      totalData: assignedServer.totalDataGB,
+      usedData: assignedServer.dataUsedGB,
+      totalDays: assignedServer.totalDays,
+      daysRemaining: assignedServer.daysRemaining
+  } : {
+      totalData: 0,
+      usedData: 0,
+      totalDays: 1,
+      daysRemaining: 0
+  };
+
+  const dataPercentage = stats.totalData > 0 ? Math.min(100, (stats.usedData / stats.totalData) * 100) : 0;
+  const daysPercentage = stats.totalDays > 0 ? Math.min(100, (stats.daysRemaining / stats.totalDays) * 100) : 0;
   
   const dataChart = [
-      { name: 'Used', value: user.plan.dataUsedGB, color: '#3b82f6' },
-      { name: 'Remaining', value: user.plan.totalDataGB - user.plan.dataUsedGB, color: '#1e293b' }
+      { name: 'Used', value: stats.usedData, color: '#3b82f6' },
+      { name: 'Remaining', value: stats.totalData - stats.usedData, color: '#1e293b' }
   ];
 
   const daysChart = [
-      { name: 'Remaining', value: user.plan.daysRemaining, color: '#10b981' },
-      { name: 'Passed', value: user.plan.totalDays - user.plan.daysRemaining, color: '#1e293b' }
+      { name: 'Remaining', value: stats.daysRemaining, color: '#10b981' },
+      { name: 'Passed', value: stats.totalDays - stats.daysRemaining, color: '#1e293b' }
   ];
+
+  const hasAccess = user.status === 'active' && assignedServer && assignedServer.status === 'active';
 
   return (
     <div className="flex h-screen bg-cyber-900 text-gray-200 font-mono relative overflow-hidden">
@@ -76,8 +92,8 @@ export const UserPanel: React.FC<UserPanelProps> = ({ user, fullState, onUpdateU
                     </div>
                     <div>
                         <h1 className="font-bold text-white tracking-wide">{user.username}</h1>
-                        <span className={`text-xs px-2 py-0.5 rounded ${user.status === 'active' ? 'bg-green-900/50 text-green-400' : 'bg-red-900/50 text-red-400'}`}>
-                            {user.status === 'active' ? 'SECURED' : 'INACTIVE'}
+                        <span className={`text-xs px-2 py-0.5 rounded ${hasAccess ? 'bg-green-900/50 text-green-400' : 'bg-red-900/50 text-red-400'}`}>
+                            {hasAccess ? 'SECURED' : 'DISCONNECTED'}
                         </span>
                     </div>
                 </div>
@@ -91,90 +107,96 @@ export const UserPanel: React.FC<UserPanelProps> = ({ user, fullState, onUpdateU
                 
                 {activeTab === 'home' && (
                     <>  
-                        {/* V2Ray Stats Node Simulation */}
-                        <div className="bg-cyber-800 rounded-xl border border-cyber-700 p-4 shadow-lg relative overflow-hidden">
-                            <div className="flex items-center justify-between mb-2">
-                                <div className="flex items-center gap-2">
-                                    <Server size={18} className="text-cyber-accent" />
-                                    <span className="font-bold text-white text-sm">{fullState.serverMessage || "V2Ray Stats Node"}</span>
+                        {/* Server Info Card */}
+                        {assignedServer ? (
+                            <div className="bg-cyber-800 rounded-xl border border-cyber-700 p-4 shadow-lg relative overflow-hidden">
+                                <div className="flex items-center justify-between mb-2">
+                                    <div className="flex items-center gap-2">
+                                        <Server size={18} className="text-cyber-accent" />
+                                        <span className="font-bold text-white text-sm">{assignedServer.name}</span>
+                                    </div>
+                                    <div className="flex items-center gap-1">
+                                        <div className={`w-2 h-2 rounded-full ${assignedServer.status === 'active' ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></div>
+                                        <span className="text-[10px] text-gray-400">{assignedServer.status.toUpperCase()}</span>
+                                    </div>
                                 </div>
-                                <div className="flex items-center gap-1">
-                                    <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
-                                    <span className="text-[10px] text-gray-400">12ms</span>
+                                <div className="bg-cyber-900/50 rounded-lg p-3 border border-cyber-700/50 font-mono text-xs text-gray-300 space-y-2">
+                                    <p className="text-cyber-400 italic">"{assignedServer.message}"</p>
+                                    <div className="flex justify-between border-t border-cyber-700 pt-2">
+                                        <span>Node Capacity:</span>
+                                        <span>{stats.totalData} GB</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                        <span>Node Expiry:</span>
+                                        <span>{stats.daysRemaining} Days</span>
+                                    </div>
                                 </div>
                             </div>
-                            <div className="bg-cyber-900/50 rounded-lg p-3 border border-cyber-700/50 font-mono text-xs text-gray-300 space-y-1">
-                                <div className="flex justify-between">
-                                    <span>Traffic Rem:</span>
-                                    <span className="text-cyber-400">{(user.plan.totalDataGB - user.plan.dataUsedGB).toFixed(2)} GB</span>
-                                </div>
-                                <div className="flex justify-between">
-                                    <span>Expire Date:</span>
-                                    <span className="text-cyber-400">{user.plan.daysRemaining} Days</span>
-                                </div>
-                                <div className="flex justify-between border-t border-cyber-700 pt-1 mt-1">
-                                    <span>Last Sync:</span>
-                                    <span className="text-gray-500">{new Date(fullState.lastSyncTime).toLocaleTimeString()}</span>
-                                </div>
+                        ) : (
+                            <div className="bg-red-900/20 border border-red-900/50 p-4 rounded-xl flex items-center gap-3">
+                                <AlertTriangle className="text-red-500" />
+                                <div className="text-sm text-red-300">No Server Assigned. Contact Admin.</div>
                             </div>
-                        </div>
+                        )}
 
                         {/* Status Cards */}
-                        <div className="grid grid-cols-2 gap-4">
-                            {/* Data Usage */}
-                            <div className="bg-cyber-800 rounded-2xl p-4 border border-cyber-700 flex flex-col items-center shadow-lg relative overflow-hidden group">
-                                <div className="absolute inset-0 bg-cyber-500/5 group-hover:bg-cyber-500/10 transition-colors"></div>
-                                <h3 className="text-gray-400 text-xs uppercase tracking-wider mb-2 z-10">Data</h3>
-                                <div className="h-24 w-24 relative z-10">
-                                    <ResponsiveContainer width="100%" height="100%">
-                                        <PieChart>
-                                            <Pie 
-                                                data={dataChart} innerRadius={35} outerRadius={45} 
-                                                paddingAngle={5} dataKey="value" stroke="none"
-                                            >
-                                                {dataChart.map((entry, index) => (
-                                                    <Cell key={`cell-${index}`} fill={entry.color} />
-                                                ))}
-                                            </Pie>
-                                        </PieChart>
-                                    </ResponsiveContainer>
-                                    <div className="absolute inset-0 flex items-center justify-center flex-col">
-                                        <span className="text-lg font-bold text-white">{Math.round(100 - dataPercentage)}%</span>
+                        {assignedServer && (
+                            <div className="grid grid-cols-2 gap-4">
+                                {/* Data Usage */}
+                                <div className="bg-cyber-800 rounded-2xl p-4 border border-cyber-700 flex flex-col items-center shadow-lg relative overflow-hidden group h-48">
+                                    <div className="absolute inset-0 bg-cyber-500/5 group-hover:bg-cyber-500/10 transition-colors"></div>
+                                    <h3 className="text-gray-400 text-xs uppercase tracking-wider mb-2 z-10">Data Used</h3>
+                                    <div className="h-24 w-24 relative z-10">
+                                        <ResponsiveContainer width="100%" height="100%">
+                                            <PieChart>
+                                                <Pie 
+                                                    data={dataChart} innerRadius={35} outerRadius={45} 
+                                                    paddingAngle={5} dataKey="value" stroke="none"
+                                                >
+                                                    {dataChart.map((entry, index) => (
+                                                        <Cell key={`cell-${index}`} fill={entry.color} />
+                                                    ))}
+                                                </Pie>
+                                            </PieChart>
+                                        </ResponsiveContainer>
+                                        <div className="absolute inset-0 flex items-center justify-center flex-col">
+                                            <span className="text-lg font-bold text-white">{Math.round(dataPercentage)}%</span>
+                                        </div>
+                                    </div>
+                                    <div className="mt-auto text-center z-10">
+                                        <span className="text-xl font-bold text-white">{stats.usedData.toFixed(1)}</span>
+                                        <span className="text-xs text-gray-500"> GB</span>
                                     </div>
                                 </div>
-                                <div className="mt-2 text-center z-10">
-                                    <span className="text-xl font-bold text-white">{(user.plan.totalDataGB - user.plan.dataUsedGB).toFixed(1)}</span>
-                                    <span className="text-xs text-gray-500"> / {user.plan.totalDataGB} GB</span>
-                                </div>
-                            </div>
 
-                            {/* Days Remaining */}
-                            <div className="bg-cyber-800 rounded-2xl p-4 border border-cyber-700 flex flex-col items-center shadow-lg relative overflow-hidden group">
-                                <div className="absolute inset-0 bg-green-500/5 group-hover:bg-green-500/10 transition-colors"></div>
-                                <h3 className="text-gray-400 text-xs uppercase tracking-wider mb-2 z-10">Days</h3>
-                                <div className="h-24 w-24 relative z-10">
-                                    <ResponsiveContainer width="100%" height="100%">
-                                        <PieChart>
-                                            <Pie 
-                                                data={daysChart} innerRadius={35} outerRadius={45} 
-                                                paddingAngle={5} dataKey="value" stroke="none"
-                                            >
-                                                {daysChart.map((entry, index) => (
-                                                    <Cell key={`cell-${index}`} fill={entry.color} />
-                                                ))}
-                                            </Pie>
-                                        </PieChart>
-                                    </ResponsiveContainer>
-                                    <div className="absolute inset-0 flex items-center justify-center flex-col">
-                                        <span className="text-lg font-bold text-white">{user.plan.daysRemaining}</span>
+                                {/* Days Remaining */}
+                                <div className="bg-cyber-800 rounded-2xl p-4 border border-cyber-700 flex flex-col items-center shadow-lg relative overflow-hidden group h-48">
+                                    <div className="absolute inset-0 bg-green-500/5 group-hover:bg-green-500/10 transition-colors"></div>
+                                    <h3 className="text-gray-400 text-xs uppercase tracking-wider mb-2 z-10">Validity</h3>
+                                    <div className="h-24 w-24 relative z-10">
+                                        <ResponsiveContainer width="100%" height="100%">
+                                            <PieChart>
+                                                <Pie 
+                                                    data={daysChart} innerRadius={35} outerRadius={45} 
+                                                    paddingAngle={5} dataKey="value" stroke="none"
+                                                >
+                                                    {daysChart.map((entry, index) => (
+                                                        <Cell key={`cell-${index}`} fill={entry.color} />
+                                                    ))}
+                                                </Pie>
+                                            </PieChart>
+                                        </ResponsiveContainer>
+                                        <div className="absolute inset-0 flex items-center justify-center flex-col">
+                                            <span className="text-lg font-bold text-white">{stats.daysRemaining}</span>
+                                        </div>
+                                    </div>
+                                    <div className="mt-auto text-center z-10">
+                                        <span className="text-xl font-bold text-white">{stats.daysRemaining}</span>
+                                        <span className="text-xs text-gray-500"> Days</span>
                                     </div>
                                 </div>
-                                <div className="mt-2 text-center z-10">
-                                    <span className="text-xl font-bold text-white">{user.plan.daysRemaining}</span>
-                                    <span className="text-xs text-gray-500"> Days Left</span>
-                                </div>
                             </div>
-                        </div>
+                        )}
 
                         {/* Connection Button */}
                         <div className="bg-gradient-to-br from-cyber-800 to-cyber-900 rounded-2xl p-1 border border-cyber-700 shadow-xl">
@@ -184,14 +206,14 @@ export const UserPanel: React.FC<UserPanelProps> = ({ user, fullState, onUpdateU
                                 
                                 <button 
                                     onClick={handleCopyLink}
-                                    disabled={user.status !== 'active'}
+                                    disabled={!hasAccess}
                                     className={`w-full py-4 rounded-xl flex items-center justify-center space-x-2 transition-all transform active:scale-95 font-bold ${
-                                        user.status === 'active' 
+                                        hasAccess
                                             ? copied ? 'bg-green-600 text-white' : 'bg-cyber-500 hover:bg-cyber-400 text-white shadow-lg shadow-cyber-500/30' 
                                             : 'bg-cyber-800 text-gray-500 cursor-not-allowed border border-cyber-700'
                                     }`}
                                 >
-                                    {user.status === 'active' ? (
+                                    {hasAccess ? (
                                         copied ? <><Check size={20} /><span>Copied!</span></> : <><Copy size={20} /><span>Copy Subscription Link</span></>
                                     ) : (
                                         <><Shield size={20} /><span>Subscription Inactive</span></>
