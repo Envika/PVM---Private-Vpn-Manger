@@ -5,7 +5,7 @@ import { generateSecureCode, simulateLiveSync, generateUUID } from '../services/
 import { 
     Users, Activity, MessageSquare, Plus, RefreshCw, 
     Trash2, Send, CheckCircle, Search, Settings, Server,
-    Database, LogOut, Wifi, Megaphone, Sparkles, Copy, Check
+    Database, LogOut, Wifi, Megaphone, Sparkles, Copy, Check, Lock, Save
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { suggestReply, generateBroadcastMessage } from '../services/gemini';
@@ -17,7 +17,7 @@ interface AdminPanelProps {
 }
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({ state, onUpdate, onLogout }) => {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'users' | 'servers' | 'messages' | 'broadcasts'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'users' | 'servers' | 'messages' | 'broadcasts' | 'settings'>('dashboard');
   
   // User Management
   const [searchTerm, setSearchTerm] = useState('');
@@ -38,6 +38,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ state, onUpdate, onLogou
   const [broadcastTopic, setBroadcastTopic] = useState('');
   const [broadcastMessage, setBroadcastMessage] = useState('');
   const [isGeneratingBroadcast, setIsGeneratingBroadcast] = useState(false);
+
+  // Settings / Password
+  const [passwordForm, setPasswordForm] = useState({ current: '', new: '', confirm: '' });
 
   // Derived State
   const activeUsers = state.users.filter(u => u.status === 'active').length;
@@ -212,6 +215,35 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ state, onUpdate, onLogou
       setBroadcastMessage('');
   };
 
+  // Settings Handlers
+  const handleChangePassword = () => {
+      if (!passwordForm.current || !passwordForm.new || !passwordForm.confirm) {
+          alert("Please fill in all fields");
+          return;
+      }
+      
+      if (passwordForm.current !== state.adminPassword) {
+          alert("Current password is incorrect");
+          return;
+      }
+
+      if (passwordForm.new !== passwordForm.confirm) {
+          alert("New passwords do not match");
+          return;
+      }
+
+      if (passwordForm.new.length < 4) {
+          alert("Password must be at least 4 characters long");
+          return;
+      }
+
+      if (confirm("Changing your password will log you out immediately. Do you want to continue?")) {
+          onUpdate({ ...state, adminPassword: passwordForm.new });
+          alert("Password updated successfully. Please log in again.");
+          onLogout();
+      }
+  };
+
   // Render Helpers
   const renderDashboard = () => (
       <div className="space-y-6">
@@ -294,6 +326,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ state, onUpdate, onLogou
                     { id: 'servers', label: 'Nodes', icon: Server },
                     { id: 'messages', label: 'Support', icon: MessageSquare },
                     { id: 'broadcasts', label: 'Broadcasts', icon: Megaphone },
+                    { id: 'settings', label: 'Settings', icon: Settings },
                 ].map((item) => (
                     <button
                         key={item.id}
@@ -758,6 +791,78 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ state, onUpdate, onLogou
                             </button>
                         </div>
                     </div>
+                )}
+
+                {activeTab === 'settings' && (
+                     <div className="max-w-xl mx-auto space-y-8">
+                         <h3 className="text-white font-bold flex items-center gap-2 mb-6">
+                             <Settings size={24} className="text-cyber-500" /> Admin Settings
+                         </h3>
+
+                         <div className="bg-cyber-800 rounded-xl border border-cyber-700 overflow-hidden">
+                             <div className="p-4 bg-cyber-900/50 border-b border-cyber-700 flex items-center gap-2">
+                                 <Lock size={18} className="text-red-400" />
+                                 <h4 className="font-bold text-white">Security Credentials</h4>
+                             </div>
+                             
+                             <div className="p-6 space-y-4">
+                                 <div>
+                                     <label className="text-xs text-gray-500 uppercase font-bold">Current Password</label>
+                                     <input 
+                                         type="password"
+                                         value={passwordForm.current}
+                                         onChange={e => setPasswordForm({...passwordForm, current: e.target.value})}
+                                         className="w-full mt-1 bg-cyber-900 border border-cyber-700 rounded-lg px-4 py-2 text-white focus:border-cyber-500 outline-none"
+                                         placeholder="Enter current password"
+                                     />
+                                 </div>
+                                 
+                                 <div className="grid grid-cols-2 gap-4">
+                                     <div>
+                                         <label className="text-xs text-gray-500 uppercase font-bold">New Password</label>
+                                         <input 
+                                             type="password"
+                                             value={passwordForm.new}
+                                             onChange={e => setPasswordForm({...passwordForm, new: e.target.value})}
+                                             className="w-full mt-1 bg-cyber-900 border border-cyber-700 rounded-lg px-4 py-2 text-white focus:border-cyber-500 outline-none"
+                                             placeholder="New password"
+                                         />
+                                     </div>
+                                     <div>
+                                         <label className="text-xs text-gray-500 uppercase font-bold">Confirm New</label>
+                                         <input 
+                                             type="password"
+                                             value={passwordForm.confirm}
+                                             onChange={e => setPasswordForm({...passwordForm, confirm: e.target.value})}
+                                             className="w-full mt-1 bg-cyber-900 border border-cyber-700 rounded-lg px-4 py-2 text-white focus:border-cyber-500 outline-none"
+                                             placeholder="Repeat password"
+                                         />
+                                     </div>
+                                 </div>
+
+                                 <div className="pt-4 flex justify-end">
+                                     <button 
+                                         onClick={handleChangePassword}
+                                         className="bg-cyber-500 hover:bg-cyber-400 text-white px-6 py-2 rounded-lg font-bold flex items-center gap-2 transition-all shadow-lg shadow-cyber-500/20"
+                                     >
+                                         <Save size={18} /> Update Password
+                                     </button>
+                                 </div>
+                             </div>
+                         </div>
+                         
+                         <div className="bg-yellow-900/10 border border-yellow-600/30 p-4 rounded-xl flex items-start gap-3">
+                             <div className="bg-yellow-900/30 p-2 rounded-full">
+                                 <Activity size={20} className="text-yellow-500" />
+                             </div>
+                             <div>
+                                 <h5 className="text-yellow-200 font-bold text-sm">System Note</h5>
+                                 <p className="text-yellow-200/70 text-xs mt-1">
+                                     Changing the administrator password will immediately invalidate the current session. You will be logged out and required to sign in with the new credentials.
+                                 </p>
+                             </div>
+                         </div>
+                     </div>
                 )}
             </main>
         </div>
