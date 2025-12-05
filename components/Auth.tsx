@@ -1,15 +1,17 @@
 import React, { useState } from 'react';
-import { Lock, Terminal } from 'lucide-react';
+import { Lock, Terminal, Copy, Check } from 'lucide-react';
 
 interface AuthProps {
   onAdminLogin: (password: string) => boolean;
   onUserLogin: (code: string) => void;
+  detectedTgId?: string | null;
 }
 
-export const Auth: React.FC<AuthProps> = ({ onAdminLogin, onUserLogin }) => {
+export const Auth: React.FC<AuthProps> = ({ onAdminLogin, onUserLogin, detectedTgId }) => {
   const [mode, setMode] = useState<'login' | 'admin'>('login');
   const [inputCode, setInputCode] = useState('');
   const [adminPass, setAdminPass] = useState('');
+  const [copiedId, setCopiedId] = useState(false);
 
   const handleUserLogin = () => {
     if (inputCode.length < 24) return;
@@ -21,6 +23,14 @@ export const Auth: React.FC<AuthProps> = ({ onAdminLogin, onUserLogin }) => {
     if (!success) {
         alert("Access Denied: Invalid Credentials");
     }
+  };
+
+  const handleCopyId = () => {
+      if (detectedTgId) {
+          navigator.clipboard.writeText(detectedTgId);
+          setCopiedId(true);
+          setTimeout(() => setCopiedId(false), 2000);
+      }
   };
 
   return (
@@ -43,6 +53,22 @@ export const Auth: React.FC<AuthProps> = ({ onAdminLogin, onUserLogin }) => {
         
         <h2 className="text-2xl font-bold text-center text-white mb-2 tracking-widest">GHOST LAYER</h2>
         <p className="text-center text-gray-500 text-sm mb-8">SECURE TUNNEL ACCESS</p>
+
+        {detectedTgId && mode === 'login' && (
+             <div className="mb-6 bg-cyber-900/80 border border-cyber-500/30 rounded-lg p-4 animate-in fade-in slide-in-from-top-2">
+                 <p className="text-xs text-cyber-400 font-bold mb-2 uppercase">Telegram Identity Detected</p>
+                 <div 
+                    onClick={handleCopyId}
+                    className="flex items-center justify-between bg-cyber-800 rounded p-2 border border-cyber-700 cursor-pointer hover:border-cyber-500 transition-colors group"
+                 >
+                     <code className="text-sm text-white">{detectedTgId}</code>
+                     {copiedId ? <Check size={14} className="text-green-500" /> : <Copy size={14} className="text-gray-500 group-hover:text-cyber-400" />}
+                 </div>
+                 <p className="text-[10px] text-gray-500 mt-2">
+                     Send this ID to the administrator to request access.
+                 </p>
+             </div>
+        )}
 
         {mode === 'login' && (
           <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-300">

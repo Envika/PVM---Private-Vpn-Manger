@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { loadState, saveState, BotLogic } from './services/storage';
 import { AppState, UserData } from './types';
@@ -6,16 +5,55 @@ import { AdminPanel } from './components/AdminPanel';
 import { UserPanel } from './components/UserPanel';
 import { Auth } from './components/Auth';
 
+declare global {
+  interface Window {
+    Telegram?: any;
+  }
+}
+
 const App: React.FC = () => {
   const [state, setState] = useState<AppState>(loadState());
   const [currentUser, setCurrentUser] = useState<UserData | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [view, setView] = useState<'auth' | 'admin' | 'user'>('auth');
+  const [detectedTgId, setDetectedTgId] = useState<string | null>(null);
 
   // Load state on mount
   useEffect(() => {
     setState(loadState());
   }, []);
+
+  // Telegram Web App Integration
+  useEffect(() => {
+    if (window.Telegram?.WebApp) {
+        const tg = window.Telegram.WebApp;
+        tg.ready();
+        
+        // Attempt to expand to full height
+        try { tg.expand(); } catch (e) {}
+
+        // Style integration
+        try {
+            tg.setHeaderColor('#0f172a'); 
+            tg.setBackgroundColor('#0f172a');
+        } catch (e) {}
+
+        const telegramUserId = tg.initDataUnsafe?.user?.id;
+        if (telegramUserId) {
+            const tgIdStr = String(telegramUserId);
+            setDetectedTgId(tgIdStr);
+
+            // Auto-login if user exists
+            // Note: We need to use the functional state to ensure we have the latest loaded data, 
+            // but since this runs on mount/updates, we check 'state' dependency
+            const foundUser = state.users.find(u => u.telegramId === tgIdStr);
+            if (foundUser && foundUser.status === 'active') {
+                setCurrentUser(foundUser);
+                setView('user');
+            }
+        }
+    }
+  }, [state.users]); // Re-check if users list is updated (e.g. after sync)
 
   // Auto-Sync Logic (Every 1 minute) - Simulates the Bot "Heartbeat"
   useEffect(() => {
@@ -86,6 +124,7 @@ const App: React.FC = () => {
         <Auth 
             onAdminLogin={handleAdminLogin} 
             onUserLogin={handleUserLogin} 
+            detectedTgId={detectedTgId}
         />
       )}
       
