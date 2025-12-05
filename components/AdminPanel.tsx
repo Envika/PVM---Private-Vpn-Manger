@@ -1,11 +1,11 @@
 
 import React, { useState } from 'react';
 import { AppState, UserData, Message, ServerNode } from '../types';
-import { generateSecureCode, simulateLiveSync, generateUUID } from '../services/storage';
+import { BotLogic, generateSecureCode, generateUUID } from '../services/storage';
 import { 
     Users, Activity, MessageSquare, Plus, RefreshCw, 
     Trash2, Send, CheckCircle, Search, Settings, Server,
-    Database, LogOut, Wifi, Megaphone, Sparkles, Copy, Check, Lock, Save
+    Database, LogOut, Wifi, Megaphone, Sparkles, Copy, Check, Lock, Save, Smartphone
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { suggestReply, generateBroadcastMessage } from '../services/gemini';
@@ -22,6 +22,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ state, onUpdate, onLogou
   // User Management
   const [searchTerm, setSearchTerm] = useState('');
   const [newUserUsername, setNewUserUsername] = useState('');
+  const [newUserTelegramId, setNewUserTelegramId] = useState('');
   const [newUserServerId, setNewUserServerId] = useState<string>('');
   const [copiedCodeId, setCopiedCodeId] = useState<string | null>(null);
 
@@ -46,43 +47,28 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ state, onUpdate, onLogou
   const activeUsers = state.users.filter(u => u.status === 'active').length;
   const totalDataUsed = state.servers.reduce((acc, s) => acc + s.dataUsedGB, 0);
   
+  // --- HANDLERS USING BOT LOGIC BLOCKS ---
+
   const handleSync = () => {
-    const newState = simulateLiveSync(state);
+    const newState = BotLogic.syncNetwork(state);
     onUpdate(newState);
   };
 
   const handleCreateUser = () => {
     if (!newUserUsername) return;
-    
-    const newUser: UserData = {
-      id: generateUUID(),
-      username: newUserUsername,
-      code: generateSecureCode(),
-      status: 'active',
-      serverId: newUserServerId || null,
-      plan: {
-        totalDays: 30,
-        daysRemaining: 30,
-        totalDataGB: 100,
-        dataUsedGB: 0
-      },
-      messages: [],
-      joinedAt: Date.now()
-    };
-
-    onUpdate({
-      ...state,
-      users: [...state.users, newUser]
-    });
+    const newState = BotLogic.createUser(state, newUserUsername, newUserServerId, newUserTelegramId);
+    onUpdate(newState);
     setNewUserUsername('');
+    setNewUserTelegramId('');
   };
 
   const handleDeleteUser = (id: string) => {
       if(confirm('Are you sure you want to delete this user?')) {
-          onUpdate({
-              ...state,
-              users: state.users.filter(u => u.id !== id)
-          });
+          const newState = BotLogic.deleteUser(state, id);
+          onUpdate(newState);
+          if (selectedChatUser && selectedChatUser.id === id) {
+              setSelectedChatUser(null);
+          }
       }
   };
 
@@ -92,95 +78,47 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ state, onUpdate, onLogou
       setTimeout(() => setCopiedCodeId(null), 2000);
   };
 
-  // Server Handlers
   const handleSaveServer = () => {
       if (!serverFormData.name || !serverFormData.configLink) return;
-
-      let newServers = [...state.servers];
-      if (serverFormData.id) {
-          // Edit
-          newServers = newServers.map(s => s.id === serverFormData.id ? { ...s, ...serverFormData } as ServerNode : s);
-      } else {
-          // Create
-          const newServer: ServerNode = {
-              id: generateUUID(),
-              name: serverFormData.name!,
-              subscriptionUrl: serverFormData.subscriptionUrl || '',
-              configLink: serverFormData.configLink!,
-              message: serverFormData.message || '',
-              totalDataGB: Number(serverFormData.totalDataGB) || 1000,
-              dataUsedGB: 0,
-              totalDays: Number(serverFormData.totalDays) || 30,
-              daysRemaining: Number(serverFormData.totalDays) || 30,
-              status: 'active'
-          };
-          newServers.push(newServer);
-      }
-      onUpdate({ ...state, servers: newServers });
+      const newState = BotLogic.upsertServer(state, serverFormData);
+      onUpdate(newState);
       setIsServerModalOpen(false);
       setServerFormData({});
   };
 
   const handleDeleteServer = (id: string) => {
       if (confirm('Are you sure you want to delete this server node? Users assigned to it will be unassigned.')) {
-          const newServers = state.servers.filter(s => s.id !== id);
-          // Unassign users
-          const newUsers = state.users.map(u => 
-             u.serverId === id ? { ...u, serverId: null } : u
-          );
-          
-          onUpdate({
-              ...state,
-              servers: newServers,
-              users: newUsers
-          });
+          const newState = BotLogic.deleteServer(state, id);
+          onUpdate(newState);
       }
   };
 
-  // Chat Handlers
   const handleSelectChatUser = (user: UserData) => {
-      // Mark messages as read when opening chat
-      const hasUnread = user.messages.some(m => m.sender === 'user' && !m.read);
-      
-      let userToSet = user;
-
-      if (hasUnread) {
-          const updatedMessages = user.messages.map(m => 
-              m.sender === 'user' ? { ...m, read: true } : m
-          );
-          userToSet = { ...user, messages: updatedMessages };
-          
-          onUpdate({
-              ...state,
-              users: state.users.map(u => u.id === user.id ? userToSet : u)
-          });
+      // Mark messages as read via Logic Block
+      const newState = BotLogic.markMessagesRead(state, user.id, 'admin');
+      if (newState !== state) {
+          onUpdate(newState);
+          // Update the local reference for the chat window
+          const updatedUser = newState.users.find(u => u.id === user.id) || user;
+          setSelectedChatUser(updatedUser);
+      } else {
+          setSelectedChatUser(user);
       }
-
-      setSelectedChatUser(userToSet);
       setActiveTab('messages');
   };
 
   const handleSendMessage = (userId: string) => {
       if (!replyText.trim()) return;
-      const user = state.users.find(u => u.id === userId);
-      if (!user) return;
-
-      const newMsg: Message = {
-          id: generateUUID(),
-          sender: 'admin',
-          text: replyText,
-          timestamp: Date.now(),
-          read: false // User needs to read it
-      };
-
-      const updatedUser = { ...user, messages: [...user.messages, newMsg] };
-      onUpdate({
-          ...state,
-          users: state.users.map(u => u.id === userId ? updatedUser : u)
-      });
+      
+      const newState = BotLogic.sendMessage(state, userId, replyText, 'admin');
+      onUpdate(newState);
+      
       setReplyText('');
       setAiSuggestion('');
-      setSelectedChatUser(updatedUser); // Update local selection to show new msg
+      
+      // Update local selection so the message appears instantly
+      const updatedUser = newState.users.find(u => u.id === userId);
+      if (updatedUser) setSelectedChatUser(updatedUser);
   };
 
   const handleGetAiSuggestion = async (text: string) => {
@@ -189,53 +127,34 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ state, onUpdate, onLogou
       setReplyText(suggestion);
   };
 
-  // Broadcast Handlers
   const handleGenerateBroadcast = async () => {
-      setIsGeneratingBroadcast(true);
-      const msg = await generateBroadcastMessage(broadcastTopic, 'formal');
-      setBroadcastMessage(msg);
-      setIsGeneratingBroadcast(false);
+    if (!broadcastTopic) return;
+    setIsGeneratingBroadcast(true);
+    const message = await generateBroadcastMessage(broadcastTopic);
+    setBroadcastMessage(message);
+    setIsGeneratingBroadcast(false);
   };
 
   const handleSendBroadcast = () => {
       if (!broadcastMessage.trim()) return;
-      const newUsers = state.users.map(u => ({
-          ...u,
-          messages: [...u.messages, {
-              id: generateUUID(),
-              sender: 'admin' as const, // Explicit type cast if needed
-              text: broadcastMessage,
-              timestamp: Date.now(),
-              read: false
-          }]
-      }));
-      onUpdate({ ...state, users: newUsers });
+      
+      // Broadcast to all users using the Logic Block iteratively (or could add a bulk method)
+      let tempState = state;
+      state.users.forEach(u => {
+          tempState = BotLogic.sendMessage(tempState, u.id, broadcastMessage, 'admin');
+      });
+      
+      onUpdate(tempState);
       alert("Broadcast sent to all users!");
       setBroadcastTopic('');
       setBroadcastMessage('');
   };
 
-  // Settings Handlers
   const handleChangePassword = () => {
-      if (!passwordForm.current || !passwordForm.new || !passwordForm.confirm) {
-          alert("Please fill in all fields");
-          return;
-      }
-      
-      if (passwordForm.current !== state.adminPassword) {
-          alert("Current password is incorrect");
-          return;
-      }
-
-      if (passwordForm.new !== passwordForm.confirm) {
-          alert("New passwords do not match");
-          return;
-      }
-
-      if (passwordForm.new.length < 4) {
-          alert("Password must be at least 4 characters long");
-          return;
-      }
+      if (!passwordForm.current || !passwordForm.new || !passwordForm.confirm) return alert("Please fill in all fields");
+      if (passwordForm.current !== state.adminPassword) return alert("Current password is incorrect");
+      if (passwordForm.new !== passwordForm.confirm) return alert("New passwords do not match");
+      if (passwordForm.new.length < 4) return alert("Password must be at least 4 characters long");
 
       if (confirm("Changing your password will log you out immediately. Do you want to continue?")) {
           onUpdate({ ...state, adminPassword: passwordForm.new });
@@ -244,7 +163,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ state, onUpdate, onLogou
       }
   };
 
-  // Render Helpers
+  // --- RENDER HELPERS ---
+
   const renderDashboard = () => (
       <div className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -375,8 +295,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ state, onUpdate, onLogou
                 {activeTab === 'users' && (
                     <div className="space-y-6">
                         {/* Add User Bar */}
-                        <div className="bg-cyber-800 p-4 rounded-xl border border-cyber-700 flex gap-4 items-end">
-                            <div className="flex-1">
+                        <div className="bg-cyber-800 p-4 rounded-xl border border-cyber-700 grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
+                            <div className="md:col-span-4">
                                 <label className="text-xs text-gray-500 mb-1 block">Username</label>
                                 <input 
                                     type="text" 
@@ -386,7 +306,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ state, onUpdate, onLogou
                                     placeholder="@telegram_handle"
                                 />
                             </div>
-                            <div className="w-64">
+                            <div className="md:col-span-3">
+                                <label className="text-xs text-gray-500 mb-1 block">Telegram ID (Optional)</label>
+                                <input 
+                                    type="text" 
+                                    value={newUserTelegramId}
+                                    onChange={(e) => setNewUserTelegramId(e.target.value)}
+                                    className="w-full bg-cyber-900 border border-cyber-700 rounded-lg px-3 py-2 text-white text-sm"
+                                    placeholder="e.g. 123456789"
+                                />
+                            </div>
+                            <div className="md:col-span-3">
                                 <label className="text-xs text-gray-500 mb-1 block">Assign Node</label>
                                 <select 
                                     value={newUserServerId}
@@ -399,12 +329,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ state, onUpdate, onLogou
                                     ))}
                                 </select>
                             </div>
-                            <button 
-                                onClick={handleCreateUser}
-                                className="bg-cyber-500 hover:bg-cyber-400 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 h-[38px]"
-                            >
-                                <Plus size={16} /> Create
-                            </button>
+                            <div className="md:col-span-2">
+                                <button 
+                                    onClick={handleCreateUser}
+                                    className="w-full bg-cyber-500 hover:bg-cyber-400 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2 h-[38px]"
+                                >
+                                    <Plus size={16} /> Create
+                                </button>
+                            </div>
                         </div>
 
                         {/* Search */}
@@ -412,7 +344,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ state, onUpdate, onLogou
                             <Search className="absolute left-3 top-3 text-gray-500" size={18} />
                             <input 
                                 type="text"
-                                placeholder="Search users..."
+                                placeholder="Search users by name or ID..."
                                 value={searchTerm}
                                 onChange={(e) => setSearchTerm(e.target.value)}
                                 className="w-full bg-cyber-800 border border-cyber-700 rounded-xl pl-10 pr-4 py-2.5 text-white focus:border-cyber-500 outline-none" 
@@ -421,83 +353,89 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ state, onUpdate, onLogou
 
                         {/* Users Table */}
                         <div className="bg-cyber-800 rounded-xl border border-cyber-700 overflow-hidden">
-                            <table className="w-full text-left text-sm">
-                                <thead className="bg-cyber-900 text-gray-400">
-                                    <tr>
-                                        <th className="p-4">User</th>
-                                        <th className="p-4">Status</th>
-                                        <th className="p-4">Node</th>
-                                        <th className="p-4">Usage</th>
-                                        <th className="p-4">Access Key</th>
-                                        <th className="p-4 text-right">Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-cyber-700">
-                                    {state.users
-                                        .filter(u => u.username.toLowerCase().includes(searchTerm.toLowerCase()))
-                                        .map(user => {
-                                            const server = state.servers.find(s => s.id === user.serverId);
-                                            // Usage is server based if linked, else local plan
-                                            const usage = server ? server.dataUsedGB : user.plan.dataUsedGB;
-                                            const total = server ? server.totalDataGB : user.plan.totalDataGB;
-                                            const percent = total > 0 ? Math.min(100, (usage / total) * 100) : 0;
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-left text-sm">
+                                    <thead className="bg-cyber-900 text-gray-400">
+                                        <tr>
+                                            <th className="p-4">User</th>
+                                            <th className="p-4">Telegram ID</th>
+                                            <th className="p-4">Status</th>
+                                            <th className="p-4">Node</th>
+                                            <th className="p-4">Usage</th>
+                                            <th className="p-4">Access Key</th>
+                                            <th className="p-4 text-right">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-cyber-700">
+                                        {state.users
+                                            .filter(u => 
+                                                u.username.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                                                (u.telegramId && u.telegramId.includes(searchTerm))
+                                            )
+                                            .map(user => {
+                                                const server = state.servers.find(s => s.id === user.serverId);
+                                                const usage = server ? server.dataUsedGB : user.plan.dataUsedGB;
+                                                const total = server ? server.totalDataGB : user.plan.totalDataGB;
+                                                const percent = total > 0 ? Math.min(100, (usage / total) * 100) : 0;
 
-                                            return (
-                                                <tr key={user.id} className="hover:bg-cyber-700/50 transition-colors">
-                                                    <td className="p-4 font-bold text-white">{user.username}</td>
-                                                    <td className="p-4">
-                                                        <span className={`px-2 py-1 rounded text-xs ${user.status === 'active' ? 'bg-green-900/50 text-green-400' : 'bg-red-900/50 text-red-400'}`}>
-                                                            {user.status.toUpperCase()}
-                                                        </span>
-                                                    </td>
-                                                    <td className="p-4 text-gray-400">{server?.name || 'Unassigned'}</td>
-                                                    <td className="p-4">
-                                                        <div className="flex items-center gap-2">
-                                                            <div className="w-24 h-1.5 bg-cyber-900 rounded-full overflow-hidden">
-                                                                <div className="h-full bg-cyber-500" style={{ width: `${percent}%` }}></div>
-                                                            </div>
-                                                            <span className="text-xs text-gray-500">{usage.toFixed(1)}GB</span>
-                                                        </div>
-                                                    </td>
-                                                    <td 
-                                                        className="p-4 font-mono text-xs text-cyber-400 cursor-pointer select-none group relative"
-                                                        onClick={() => handleCopyCode(user.id, user.code)}
-                                                    >
-                                                        <div className="flex items-center gap-2">
-                                                            <span className="truncate max-w-[100px] opacity-80 group-hover:opacity-100 transition-opacity">
-                                                                {user.code}
+                                                return (
+                                                    <tr key={user.id} className="hover:bg-cyber-700/50 transition-colors">
+                                                        <td className="p-4 font-bold text-white">{user.username}</td>
+                                                        <td className="p-4 text-xs text-gray-500 font-mono">{user.telegramId || '-'}</td>
+                                                        <td className="p-4">
+                                                            <span className={`px-2 py-1 rounded text-xs ${user.status === 'active' ? 'bg-green-900/50 text-green-400' : 'bg-red-900/50 text-red-400'}`}>
+                                                                {user.status.toUpperCase()}
                                                             </span>
-                                                            {copiedCodeId === user.id ? (
-                                                                <Check size={14} className="text-green-500 animate-in fade-in" />
-                                                            ) : (
-                                                                <Copy size={14} className="opacity-0 group-hover:opacity-100 transition-opacity text-cyber-500" />
-                                                            )}
-                                                        </div>
-                                                        {copiedCodeId === user.id && (
-                                                            <div className="absolute top-0 right-0 -mt-2 bg-green-900 text-green-200 text-[10px] px-1.5 py-0.5 rounded shadow-lg animate-in fade-in slide-in-from-bottom-1">
-                                                                Copied
+                                                        </td>
+                                                        <td className="p-4 text-gray-400">{server?.name || 'Unassigned'}</td>
+                                                        <td className="p-4">
+                                                            <div className="flex items-center gap-2">
+                                                                <div className="w-24 h-1.5 bg-cyber-900 rounded-full overflow-hidden">
+                                                                    <div className="h-full bg-cyber-500" style={{ width: `${percent}%` }}></div>
+                                                                </div>
+                                                                <span className="text-xs text-gray-500">{usage.toFixed(1)}GB</span>
                                                             </div>
-                                                        )}
-                                                    </td>
-                                                    <td className="p-4 text-right space-x-2">
-                                                        <button 
-                                                            onClick={() => handleSelectChatUser(user)}
-                                                            className="p-1.5 hover:bg-cyber-600 rounded text-blue-400" title="Chat"
+                                                        </td>
+                                                        <td 
+                                                            className="p-4 font-mono text-xs text-cyber-400 cursor-pointer select-none group relative"
+                                                            onClick={() => handleCopyCode(user.id, user.code)}
                                                         >
-                                                            <MessageSquare size={16} />
-                                                        </button>
-                                                        <button 
-                                                            onClick={() => handleDeleteUser(user.id)}
-                                                            className="p-1.5 bg-red-500/20 hover:bg-red-500 text-red-500 hover:text-white rounded transition-colors" title="Delete User"
-                                                        >
-                                                            <Trash2 size={16} />
-                                                        </button>
-                                                    </td>
-                                                </tr>
-                                            );
-                                        })}
-                                </tbody>
-                            </table>
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="truncate max-w-[100px] opacity-80 group-hover:opacity-100 transition-opacity">
+                                                                    {user.code}
+                                                                </span>
+                                                                {copiedCodeId === user.id ? (
+                                                                    <Check size={14} className="text-green-500 animate-in fade-in" />
+                                                                ) : (
+                                                                    <Copy size={14} className="opacity-0 group-hover:opacity-100 transition-opacity text-cyber-500" />
+                                                                )}
+                                                            </div>
+                                                            {copiedCodeId === user.id && (
+                                                                <div className="absolute top-0 right-0 -mt-2 bg-green-900 text-green-200 text-[10px] px-1.5 py-0.5 rounded shadow-lg animate-in fade-in slide-in-from-bottom-1 z-10">
+                                                                    Copied
+                                                                </div>
+                                                            )}
+                                                        </td>
+                                                        <td className="p-4 text-right space-x-2">
+                                                            <button 
+                                                                onClick={() => handleSelectChatUser(user)}
+                                                                className="p-1.5 hover:bg-cyber-600 rounded text-blue-400" title="Chat"
+                                                            >
+                                                                <MessageSquare size={16} />
+                                                            </button>
+                                                            <button 
+                                                                onClick={() => handleDeleteUser(user.id)}
+                                                                className="p-1.5 bg-red-500/20 hover:bg-red-500 text-red-500 hover:text-white rounded transition-colors" title="Delete User"
+                                                            >
+                                                                <Trash2 size={16} />
+                                                            </button>
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })}
+                                    </tbody>
+                                </table>
+                            </div>
                         </div>
                     </div>
                 )}
@@ -572,8 +510,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ state, onUpdate, onLogou
 
                         {/* Server Modal */}
                         {isServerModalOpen && (
-                            <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 backdrop-blur-sm">
-                                <div className="bg-cyber-800 border border-cyber-600 rounded-2xl p-6 w-full max-w-lg shadow-2xl">
+                            <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 backdrop-blur-sm p-4">
+                                <div className="bg-cyber-800 border border-cyber-600 rounded-2xl p-6 w-full max-w-lg shadow-2xl overflow-y-auto max-h-[90vh]">
                                     <h3 className="text-xl font-bold text-white mb-4">{serverFormData.id ? 'Edit Node' : 'New Node'}</h3>
                                     <div className="space-y-4">
                                         <div>
@@ -593,7 +531,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ state, onUpdate, onLogou
                                             />
                                         </div>
                                         <div>
-                                            <label className="text-xs text-gray-500">Subscription URL (Optional)</label>
+                                            <label className="text-xs text-gray-500">Subscription URL (Full Upstream)</label>
                                             <input 
                                                 className="w-full bg-cyber-900 border border-cyber-700 rounded-lg p-2 text-white font-mono text-xs" 
                                                 value={serverFormData.subscriptionUrl || ''}
@@ -634,7 +572,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ state, onUpdate, onLogou
                                             </select>
                                         </div>
                                         <div>
-                                            <label className="text-xs text-gray-500">Welcome Message (Optional)</label>
+                                            <label className="text-xs text-gray-500">Welcome Message</label>
                                             <input 
                                                 className="w-full bg-cyber-900 border border-cyber-700 rounded-lg p-2 text-white" 
                                                 value={serverFormData.message || ''}
@@ -682,7 +620,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ state, onUpdate, onLogou
                             {selectedChatUser ? (
                                 <>
                                     <div className="p-4 border-b border-cyber-700 bg-cyber-900/30 flex justify-between items-center">
-                                        <span className="font-bold text-white">{selectedChatUser.username}</span>
+                                        <div className="flex items-center gap-2">
+                                            <span className="font-bold text-white">{selectedChatUser.username}</span>
+                                            {selectedChatUser.telegramId && (
+                                                <span className="text-[10px] bg-cyber-900 px-1 rounded text-cyber-400 border border-cyber-700">
+                                                    TG: {selectedChatUser.telegramId}
+                                                </span>
+                                            )}
+                                        </div>
                                         <div className="text-xs text-gray-500">ID: {selectedChatUser.id.substring(0,6)}</div>
                                     </div>
                                     <div className="flex-1 overflow-y-auto p-4 space-y-4">

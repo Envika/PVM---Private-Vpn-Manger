@@ -1,10 +1,10 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { UserData, Message, AppState } from '../types';
-import { generateUUID } from '../services/storage';
+import { BotLogic, generateUUID } from '../services/storage';
 import {  
     Wifi, Calendar, Download, Send, MessageSquare, 
-    Shield, Activity, LogOut, Copy, Check, Info, Server, AlertTriangle
+    Shield, Activity, LogOut, Copy, Check, Info, Server, AlertTriangle, Link as LinkIcon
 } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 
@@ -18,7 +18,8 @@ interface UserPanelProps {
 export const UserPanel: React.FC<UserPanelProps> = ({ user, fullState, onUpdateUser, onLogout }) => {
   const [activeTab, setActiveTab] = useState<'home' | 'support'>('home');
   const [msgText, setMsgText] = useState('');
-  const [copied, setCopied] = useState(false);
+  const [copiedConfig, setCopiedConfig] = useState(false);
+  const [copiedSub, setCopiedSub] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const assignedServer = fullState.servers.find(s => s.id === user.serverId);
@@ -29,23 +30,25 @@ export const UserPanel: React.FC<UserPanelProps> = ({ user, fullState, onUpdateU
           messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
       }
 
-      // Mark messages as read when in support tab
+      // Safe mark read logic
       if (activeTab === 'support') {
           const hasUnread = user.messages.some(m => m.sender === 'admin' && !m.read);
           if (hasUnread) {
                const updatedMessages = user.messages.map(m => 
                   m.sender === 'admin' ? { ...m, read: true } : m
               );
-              // Wrap in timeout or use direct update to avoid render loop issues if parent is strict
+              // Directly update to avoid render loop if not handled upstream, 
+              // but here we trust the callback to update the parent.
               onUpdateUser({ ...user, messages: updatedMessages });
           }
       }
-  }, [activeTab, user.messages.length, user.messages]); 
-  // We include user.messages in deps but the check `hasUnread` prevents infinite loops 
-  // because the next render will have all read=true.
+  }, [activeTab, user.messages]);
 
   const handleSendMessage = () => {
     if (!msgText.trim()) return;
+    
+    // We can simulate sending message via BotLogic locally first for UI responsiveness
+    // In a real bot, this would API call.
     const newMessage: Message = {
       id: generateUUID(),
       sender: 'user',
@@ -61,8 +64,15 @@ export const UserPanel: React.FC<UserPanelProps> = ({ user, fullState, onUpdateU
       if (!assignedServer) return;
       const link = `${assignedServer.configLink}#${user.username}`;
       navigator.clipboard.writeText(link);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      setCopiedConfig(true);
+      setTimeout(() => setCopiedConfig(false), 2000);
+  };
+
+  const handleCopySub = () => {
+      if (!assignedServer || !assignedServer.subscriptionUrl) return;
+      navigator.clipboard.writeText(assignedServer.subscriptionUrl);
+      setCopiedSub(true);
+      setTimeout(() => setCopiedSub(false), 2000);
   };
 
   // Determine which stats to show (Shared Server Stats if bound, otherwise fallback/empty)
@@ -212,27 +222,41 @@ export const UserPanel: React.FC<UserPanelProps> = ({ user, fullState, onUpdateU
                         )}
 
                         {/* Connection Button */}
-                        <div className="bg-gradient-to-br from-cyber-800 to-cyber-900 rounded-2xl p-1 border border-cyber-700 shadow-xl">
-                            <div className="bg-cyber-900/50 rounded-xl p-6 flex flex-col items-center text-center space-y-4">
-                                <h3 className="text-lg font-bold text-white">V2Ray Configuration</h3>
-                                <p className="text-sm text-gray-400">Import this link into your V2Ray client to connect to the secure network.</p>
-                                
-                                <button 
-                                    onClick={handleCopyLink}
-                                    disabled={!hasAccess}
-                                    className={`w-full py-4 rounded-xl flex items-center justify-center space-x-2 transition-all transform active:scale-95 font-bold ${
-                                        hasAccess
-                                            ? copied ? 'bg-green-600 text-white' : 'bg-cyber-500 hover:bg-cyber-400 text-white shadow-lg shadow-cyber-500/30' 
-                                            : 'bg-cyber-800 text-gray-500 cursor-not-allowed border border-cyber-700'
-                                    }`}
-                                >
-                                    {hasAccess ? (
-                                        copied ? <><Check size={20} /><span>Copied!</span></> : <><Copy size={20} /><span>Copy Subscription Link</span></>
-                                    ) : (
-                                        <><Shield size={20} /><span>Subscription Inactive</span></>
-                                    )}
-                                </button>
+                        <div className="space-y-3">
+                            {/* Primary: Copy Config */}
+                            <div className="bg-gradient-to-br from-cyber-800 to-cyber-900 rounded-2xl p-1 border border-cyber-700 shadow-xl">
+                                <div className="bg-cyber-900/50 rounded-xl p-6 flex flex-col items-center text-center space-y-4">
+                                    <h3 className="text-lg font-bold text-white">V2Ray Configuration</h3>
+                                    <p className="text-sm text-gray-400">Import this connection key into your client.</p>
+                                    
+                                    <button 
+                                        onClick={handleCopyLink}
+                                        disabled={!hasAccess}
+                                        className={`w-full py-4 rounded-xl flex items-center justify-center space-x-2 transition-all transform active:scale-95 font-bold ${
+                                            hasAccess
+                                                ? copiedConfig ? 'bg-green-600 text-white' : 'bg-cyber-500 hover:bg-cyber-400 text-white shadow-lg shadow-cyber-500/30' 
+                                                : 'bg-cyber-800 text-gray-500 cursor-not-allowed border border-cyber-700'
+                                        }`}
+                                    >
+                                        {hasAccess ? (
+                                            copiedConfig ? <><Check size={20} /><span>Copied!</span></> : <><Copy size={20} /><span>Copy Access Key</span></>
+                                        ) : (
+                                            <><Shield size={20} /><span>Subscription Inactive</span></>
+                                        )}
+                                    </button>
+                                </div>
                             </div>
+
+                            {/* Secondary: Copy Subscription (If available) */}
+                            {hasAccess && assignedServer?.subscriptionUrl && (
+                                <button 
+                                    onClick={handleCopySub}
+                                    className={`w-full py-3 rounded-xl flex items-center justify-center space-x-2 border border-cyber-700 hover:bg-cyber-800 transition-colors ${copiedSub ? 'text-green-400' : 'text-cyber-400'}`}
+                                >
+                                    {copiedSub ? <Check size={18} /> : <LinkIcon size={18} />}
+                                    <span className="text-sm font-bold">Copy Full Subscription Link</span>
+                                </button>
+                            )}
                         </div>
                     </>
                 )}

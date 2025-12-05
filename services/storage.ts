@@ -1,7 +1,9 @@
 
-import { AppState, INITIAL_STATE, ServerNode } from '../types';
+import { AppState, INITIAL_STATE, ServerNode, UserData, Message } from '../types';
 
-const STORAGE_KEY = 'v2ray_bot_db_v5_multiserver'; // Bumped version
+const STORAGE_KEY = 'v2ray_bot_db_v6_logic_block';
+
+// --- UTILITIES ---
 
 export const generateUUID = (): string => {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -21,52 +23,22 @@ export const generateSecureCode = (): string => {
     .join('');
 };
 
+// --- DATA PERSISTENCE ---
+
 export const loadState = (): AppState => {
   const stored = localStorage.getItem(STORAGE_KEY);
   if (!stored) {
-    // Try to migrate from v3/v4 if exists to preserve password/users
-    const oldStored = localStorage.getItem('v2ray_bot_db_v3') || localStorage.getItem('v2ray_bot_db_v4');
-    if (oldStored) {
-      try {
-        const parsedOld = JSON.parse(oldStored);
-        // Create a default server from old global config
-        const defaultServer: ServerNode = {
-          id: generateUUID(),
-          name: 'Primary Server (Migrated)',
-          subscriptionUrl: parsedOld.subscriptionUrl || '',
-          configLink: parsedOld.baseVpnConfig || 'vless://example',
-          message: parsedOld.serverMessage || 'System Operational',
-          totalDataGB: 1000,
-          dataUsedGB: 0,
-          totalDays: 30,
-          daysRemaining: 30,
-          status: 'active'
-        };
-
-        // Assign existing users to this server
-        const migratedUsers = (parsedOld.users || []).map((u: any) => ({
-           ...u,
-           serverId: defaultServer.id
-        }));
-
-        return {
-          users: migratedUsers,
-          servers: [defaultServer],
-          adminPassword: parsedOld.adminPassword || 'admin',
-          lastSyncTime: Date.now()
-        };
-      } catch (e) {
-        console.error("Migration failed", e);
-      }
-    }
     return INITIAL_STATE;
   }
-
   try {
     const parsed = JSON.parse(stored);
-    // Ensure requests property is ignored if present in old JSON
-    const { requests, ...cleanState } = parsed; 
-    return { ...INITIAL_STATE, ...cleanState };
+    // Ensure all new fields exist if loading from old state
+    return { 
+        ...INITIAL_STATE, 
+        ...parsed,
+        // Migration safety: ensure lastDayUpdate exists
+        lastDayUpdate: parsed.lastDayUpdate || Date.now() 
+    };
   } catch (e) {
     console.error("Failed to parse state", e);
     return INITIAL_STATE;
@@ -77,44 +49,158 @@ export const saveState = (state: AppState) => {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 };
 
-// Daily update logic (Run via manual trigger or smart sync)
-export const simulateDailyUpdate = (state: AppState): AppState => {
-  // Update Server Days
-  const newServers = state.servers.map(s => {
-      const newDays = Math.max(0, s.daysRemaining - 1);
-      return { ...s, daysRemaining: newDays };
-  });
+// --- CORE SERVER LOGIC BLOCKS ---
+// These functions act as the "Backend API" or "Bot Controller"
 
-  return { ...state, servers: newServers };
-};
+export const BotLogic = {
+    // 1. Create User
+    createUser: (state: AppState, username: string, serverId: string, telegramId?: string): AppState => {
+        const newUser: UserData = {
+            id: generateUUID(),
+            telegramId: telegramId || undefined,
+            username,
+            code: generateSecureCode(),
+            status: 'active',
+            serverId: serverId || null,
+            plan: {
+                totalDays: 30,
+                daysRemaining: 30,
+                totalDataGB: 100,
+                dataUsedGB: 0
+            },
+            messages: [],
+            joinedAt: Date.now()
+        };
+        return { ...state, users: [...state.users, newUser] };
+    },
 
-// "Live" sync that simulates fetching data from Upstream
-// This now updates SERVERS (Shared stats) rather than just users
-export const simulateLiveSync = (state: AppState): AppState => {
-    // Update Servers
-    const newServers = state.servers.map(s => {
-        if (s.status === 'offline') return s;
+    // 2. Delete User
+    deleteUser: (state: AppState, userId: string): AppState => {
+        return {
+            ...state,
+            users: state.users.filter(u => u.id !== userId)
+        };
+    },
 
-        // Simulate usage increment
-        // Random usage between 0.05 GB and 0.5 GB per sync interval
-        const usageIncrement = Math.random() * 0.5; 
-        const usedData = s.dataUsedGB + usageIncrement;
-        const newData = Math.min(s.totalDataGB, usedData);
+    // 3. Server Management
+    upsertServer: (state: AppState, serverData: Partial<ServerNode>): AppState => {
+        let newServers = [...state.servers];
+        if (serverData.id) {
+            // Update existing
+            newServers = newServers.map(s => s.id === serverData.id ? { ...s, ...serverData } as ServerNode : s);
+        } else {
+            // Create new
+            const newServer: ServerNode = {
+                id: generateUUID(),
+                name: serverData.name || 'New Node',
+                subscriptionUrl: serverData.subscriptionUrl || '',
+                configLink: serverData.configLink || '',
+                message: serverData.message || '',
+                totalDataGB: Number(serverData.totalDataGB) || 1000,
+                dataUsedGB: 0,
+                totalDays: Number(serverData.totalDays) || 30,
+                daysRemaining: Number(serverData.totalDays) || 30,
+                status: 'active'
+            };
+            newServers.push(newServer);
+        }
+        return { ...state, servers: newServers };
+    },
+
+    deleteServer: (state: AppState, serverId: string): AppState => {
+        // Remove server
+        const newServers = state.servers.filter(s => s.id !== serverId);
+        // Unassign users linked to this server
+        const newUsers = state.users.map(u => 
+            u.serverId === serverId ? { ...u, serverId: null } : u
+        );
+        return { ...state, servers: newServers, users: newUsers };
+    },
+
+    // 4. Messaging
+    sendMessage: (state: AppState, userId: string, text: string, sender: 'admin' | 'user'): AppState => {
+        const user = state.users.find(u => u.id === userId);
+        if (!user) return state;
+
+        const newMsg: Message = {
+            id: generateUUID(),
+            sender,
+            text,
+            timestamp: Date.now(),
+            read: false
+        };
+
+        const updatedUser = { ...user, messages: [...user.messages, newMsg] };
+        return {
+            ...state,
+            users: state.users.map(u => u.id === userId ? updatedUser : u)
+        };
+    },
+
+    markMessagesRead: (state: AppState, userId: string, reader: 'admin' | 'user'): AppState => {
+        const user = state.users.find(u => u.id === userId);
+        if (!user) return state;
+
+        // If reader is admin, we mark 'user' messages as read.
+        // If reader is user, we mark 'admin' messages as read.
+        const targetSender = reader === 'admin' ? 'user' : 'admin';
         
-        let newStatus = s.status;
-        if (newData >= s.totalDataGB || s.daysRemaining <= 0) {
-            // Can add logic to auto-disable, but usually we just show 0
+        const hasUnread = user.messages.some(m => m.sender === targetSender && !m.read);
+        if (!hasUnread) return state;
+
+        const updatedMessages = user.messages.map(m => 
+            m.sender === targetSender ? { ...m, read: true } : m
+        );
+        
+        return {
+            ...state,
+            users: state.users.map(u => u.id === userId ? { ...user, messages: updatedMessages } : u)
+        };
+    },
+
+    // 5. System Sync (The "Game Loop" or Cron Job)
+    syncNetwork: (state: AppState): AppState => {
+        const now = Date.now();
+        const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+        
+        let newState = { ...state };
+        let daysDecremented = false;
+
+        // A. Daily Settlement (Check if 24h passed since last day update)
+        if (now - state.lastDayUpdate > ONE_DAY_MS) {
+            newState.servers = newState.servers.map(s => {
+                const newDays = Math.max(0, s.daysRemaining - 1);
+                // Auto-disable if expired
+                const newStatus = newDays === 0 ? 'offline' : s.status;
+                return { ...s, daysRemaining: newDays, status: newStatus };
+            });
+            newState.lastDayUpdate = now;
+            daysDecremented = true;
         }
 
-        return {
-            ...s,
-            dataUsedGB: parseFloat(newData.toFixed(2))
-        };
-    });
+        // B. Live Traffic Simulation (Simulate data usage)
+        newState.servers = newState.servers.map(s => {
+            if (s.status === 'offline') return s;
 
-    return { 
-        ...state, 
-        servers: newServers,
-        lastSyncTime: Date.now()
-    };
+            // Random usage increment between 0.01 GB and 0.1 GB per sync
+            const usageIncrement = Math.random() * 0.1; 
+            const usedData = s.dataUsedGB + usageIncrement;
+            const newData = Math.min(s.totalDataGB, usedData);
+            
+            // Auto-disable if data depleted
+            let newStatus = s.status;
+            if (newData >= s.totalDataGB) {
+                newStatus = 'maintenance'; // Cap reached
+            }
+
+            return {
+                ...s,
+                dataUsedGB: parseFloat(newData.toFixed(2)),
+                status: newStatus
+            };
+        });
+
+        newState.lastSyncTime = now;
+        return newState;
+    }
 };

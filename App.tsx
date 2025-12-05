@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { loadState, saveState, simulateLiveSync } from './services/storage';
+import { loadState, saveState, BotLogic } from './services/storage';
 import { AppState, UserData } from './types';
 import { AdminPanel } from './components/AdminPanel';
 import { UserPanel } from './components/UserPanel';
@@ -17,18 +17,16 @@ const App: React.FC = () => {
     setState(loadState());
   }, []);
 
-  // Auto-Sync Logic (Every 10 minutes)
+  // Auto-Sync Logic (Every 1 minute) - Simulates the Bot "Heartbeat"
   useEffect(() => {
-    const SYNC_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
+    const SYNC_INTERVAL_MS = 60 * 1000; // Run logic every minute (Check daily tasks, traffic calc)
     const interval = setInterval(() => {
-        // We read from function scope 'state' which might be stale in a closure if not careful,
-        // but since we are updating state via setState callback, it's better to load fresh or use callback.
-        // For simplicity with this hook structure:
         setState(prevState => {
-            const syncedState = simulateLiveSync(prevState);
+            // "Server-Side" Logic Block Execution
+            const syncedState = BotLogic.syncNetwork(prevState);
             saveState(syncedState);
             
-            // Also update current user if logged in
+            // Sync Current User Session if active
             if (currentUser) {
                 const updated = syncedState.users.find(u => u.id === currentUser.id);
                 if (updated) setCurrentUser(updated);
@@ -38,13 +36,12 @@ const App: React.FC = () => {
     }, SYNC_INTERVAL_MS);
 
     return () => clearInterval(interval);
-  }, [currentUser?.id]); // Restart interval if user changes (rare), mainly just run on mount
+  }, [currentUser?.id]); 
 
   // Sync state changes to storage
   const handleStateUpdate = (newState: AppState) => {
     setState(newState);
     saveState(newState);
-    // If we are updating the current logged in user from admin side, sync that too
     if (currentUser) {
         const updatedUser = newState.users.find(u => u.id === currentUser.id);
         if (updatedUser) setCurrentUser(updatedUser);

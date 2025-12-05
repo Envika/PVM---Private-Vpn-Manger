@@ -12,7 +12,7 @@ export interface Message {
 export interface ServerNode {
   id: string;
   name: string;
-  subscriptionUrl: string; // The Upstream Sync URL
+  subscriptionUrl: string; // The Upstream Sync URL (e.g. from a panel like Marzban/X-UI)
   configLink: string; // The connect link (vless://...)
   message: string; // Server specific message
   totalDataGB: number;
@@ -24,6 +24,7 @@ export interface ServerNode {
 
 export interface UserData {
   id: string;
+  telegramId?: string; // Optional: Link to real Telegram User ID
   username: string; // Telegram handle
   code: string; // The 24-char unique access code
   status: UserStatus;
@@ -44,6 +45,7 @@ export interface AppState {
   servers: ServerNode[];
   adminPassword: string;
   lastSyncTime: number;
+  lastDayUpdate: number; // Timestamp for when we last decremented days
 }
 
 // Global context to simulate database
@@ -64,5 +66,6 @@ export const INITIAL_STATE: AppState = {
     }
   ],
   adminPassword: 'admin',
-  lastSyncTime: Date.now()
+  lastSyncTime: Date.now(),
+  lastDayUpdate: Date.now()
 };
